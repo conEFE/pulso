@@ -14,3 +14,4 @@ reporte_pruebas.xlsx
 *.pptx
 ppt/
 *.exe
+build_log.txt

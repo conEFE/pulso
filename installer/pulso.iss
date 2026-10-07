@@ -1,7 +1,10 @@
 ; Instalador de PULSO (Inno Setup 6). Lo compila build.bat; requiere dist\PulsoDigital\ (versión en carpeta).
 
 #define MyAppName "PULSO"
-#define MyAppVersion "1.3.0"
+; build.bat pasa la versión leída de app.py (/DMyAppVersion=x.y.z)
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0"
+#endif
 #define MyAppPublisher "PULSO"
 #define MyAppExeName "PulsoDigital.exe"
 
@@ -26,6 +29,9 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 WizardStyle=modern
 Compression=lzma2/max
 SolidCompression=yes
+; Al actualizar, cierra la app abierta; la vuelve a abrir la entrada [Run] de modo silencioso
+CloseApplications=yes
+RestartApplications=no
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -43,3 +49,5 @@ Name: "{autodesktop}\PULSO"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopic
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,PULSO}"; Flags: nowait postinstall skipifsilent
+; Actualización automática (instalador lanzado en silencio desde la app): reabrir PULSO al terminar
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent

@@ -13,8 +13,13 @@ Descarga desde **Releases** una de estas dos opciones (Windows de 64 bits; no ne
 
 | Archivo | Uso |
 |---|---|
-| `PULSO_Setup_1.3.0.exe` | Instalador con asistente: acceso en el menú Inicio, ícono opcional en el escritorio y desinstalador. No pide permisos de administrador. Abre en ~3 s. |
+| `PULSO_Setup_<versión>.exe` | Instalador con asistente: acceso en el menú Inicio, ícono opcional en el escritorio y desinstalador. No pide permisos de administrador. Abre en ~3 s. |
 | `PulsoDigital.exe` | Portable: un solo archivo, sin instalar. Tarda ~15 s en abrir porque se descomprime cada vez. |
+
+**Actualizaciones automáticas:** al abrirse, PULSO consulta el último Release de este repositorio. Si hay una
+versión nueva, muestra un aviso; en la versión instalada descarga el instalador, verifica su huella SHA-256 contra la
+publicada por GitHub, se actualiza en silencio y se vuelve a abrir. La versión portable abre la página de descarga.
+También se puede revisar a mano con *Buscar actualizaciones*, en la barra lateral.
 
 Como el ejecutable no está firmado, Windows puede mostrar "Windows protegió su PC". Elige *Más información →
 Ejecutar de todas formas*.
@@ -78,5 +83,6 @@ modelo guardado depende de ella.
 | `prep_data.py` | Une los CSV de Olist y entrena el modelo |
 | `descargar_datos.py` | Baja los CSV originales a `raw/` |
 | `probar_modelo.py` | Pruebas del modelo por terminal |
+| `actualizador.py` | Actualización automática desde los Releases de GitHub |
 | `build.bat`, `installer/pulso.iss` | Compilación del .exe y del instalador |
 | `build_deck.py`, `make_icon.py` | Presentación de la evaluación (necesita la plantilla, que no está en el repositorio) e ícono |

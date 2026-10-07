@@ -13,8 +13,10 @@ Módulos:
 import datetime as dt
 import os
 import sys
+import threading
 import time
 import unicodedata
+import webbrowser
 
 import customtkinter as ctk
 import joblib
@@ -23,6 +25,7 @@ import matplotlib.colors
 import pandas as pd
 from tkinter import filedialog, messagebox, ttk
 
+import actualizador
 from casos_prueba import ESCENARIOS, SUITE, generar
 
 # Clases del modelo guardado: se importan explícitamente para que PyInstaller las incluya en el .exe
@@ -35,7 +38,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 APP_NOMBRE = "PULSO"
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 ESPACIO = "Olist Store"
 
 # ---------------------------------------------------------------- identidad visual
@@ -1612,6 +1615,10 @@ class App(ctk.CTk):
         ctk.CTkFrame(pie, height=1, fg_color="#22405C", corner_radius=0).pack(fill="x", pady=(0, 12))
         ctk.CTkLabel(pie, text=f"PULSO {VERSION}\nDatos: Olist · Kaggle", font=(CUERPO, 10),
                      text_color="#7F93A8", justify="left", anchor="w").pack(fill="x")
+        self.btn_buscar = ctk.CTkButton(pie, text="Buscar actualizaciones", anchor="w", height=26, width=180,
+                                        fg_color="transparent", hover_color=TINTA_2, text_color="#9FB0C2",
+                                        font=(CUERPO_SB, 10), command=lambda: self.buscar_actualizacion(True))
+        self.btn_buscar.pack(fill="x", pady=(8, 0))
 
         top = ctk.CTkFrame(derecha, fg_color=BLANCO, corner_radius=0, height=52)
         top.pack(fill="x")
@@ -1627,6 +1634,17 @@ class App(ctk.CTk):
         self.lbl_estado = ctk.CTkLabel(top, text="Cargando…", font=(CUERPO, 11), text_color=TEXTO_2)
         self.lbl_estado.pack(side="right")
         ctk.CTkFrame(derecha, height=1, fg_color=LINEA, corner_radius=0).pack(fill="x")
+
+        # Aviso de versión nueva (oculto hasta que el actualizador encuentre una)
+        self.aviso = ctk.CTkFrame(derecha, fg_color="#FBEDE7", corner_radius=0, height=44)
+        self.aviso.pack_propagate(False)
+        self.lbl_aviso = ctk.CTkLabel(self.aviso, text="", font=(CUERPO_SB, 12), text_color=TINTA)
+        self.lbl_aviso.pack(side="left", padx=(32, 12))
+        ctk.CTkButton(self.aviso, text="Más tarde", width=90, height=28, fg_color="transparent",
+                      hover_color="#F3DCD2", text_color=TEXTO_2, font=(CUERPO_SB, 11),
+                      command=lambda: self.aviso.pack_forget()).pack(side="right", padx=(6, 32))
+        boton(self.aviso, "Actualizar", lambda: self.dialogo_actualizacion(), width=110, height=28).pack(side="right")
+        self.nueva_version = None
 
         self.contenido = ctk.CTkFrame(derecha, fg_color=PAPEL, corner_radius=0)
         self.contenido.pack(fill="both", expand=True)
@@ -1673,6 +1691,111 @@ class App(ctk.CTk):
         self.paginas["ia"].procesar()
         inicial = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in self.paginas else "inicio"
         self.ir(inicial)
+        self.after(1500, lambda: self.buscar_actualizacion(False))
+
+    # --- actualización automática desde GitHub
+    def buscar_actualizacion(self, manual):
+        if manual:
+            self.btn_buscar.configure(text="Buscando…", state="disabled")
+
+        def tarea():
+            try:
+                info, error = actualizador.buscar(VERSION), None
+            except Exception as e:  # noqa: BLE001  (sin internet, GitHub caído, etc.)
+                info, error = None, e
+            self.after(0, lambda: self._resultado_busqueda(info, error, manual))
+
+        threading.Thread(target=tarea, daemon=True).start()
+
+    def _resultado_busqueda(self, info, error, manual):
+        self.btn_buscar.configure(text="Buscar actualizaciones", state="normal")
+        if info:
+            self.nueva_version = info
+            self.lbl_aviso.configure(text=f"PULSO {info['version']} está disponible  ·  tienes la {VERSION}")
+            self.aviso.pack(fill="x", before=self.contenido)
+            if manual:
+                self.dialogo_actualizacion()
+        elif manual:
+            if error:
+                messagebox.showwarning(APP_NOMBRE, "No se pudo consultar GitHub. Revisa tu conexión a internet.")
+            else:
+                messagebox.showinfo(APP_NOMBRE, f"Tienes la última versión (PULSO {VERSION}).")
+
+    def dialogo_actualizacion(self):
+        info = self.nueva_version
+        if not info:
+            return
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Actualizar PULSO")
+        dlg.geometry("560x470")
+        dlg.resizable(False, False)
+        dlg.configure(fg_color=BLANCO)
+        dlg.transient(self)
+        dlg.after(100, dlg.grab_set)
+        try:
+            dlg.after(250, lambda: dlg.iconbitmap(recurso("icono.ico")))
+        except Exception:
+            pass
+        ctk.CTkLabel(dlg, text=f"PULSO {info['version']}", font=(DISPLAY_SB, 26), text_color=TINTA,
+                     anchor="w").pack(fill="x", padx=28, pady=(24, 0))
+        ctk.CTkLabel(dlg, text=f"Versión instalada: {VERSION}", font=(CUERPO, 12), text_color=TEXTO_2,
+                     anchor="w").pack(fill="x", padx=28)
+        rotulo(dlg, "Novedades").pack(fill="x", padx=28, pady=(16, 4))
+        notas = ctk.CTkTextbox(dlg, height=190, font=(CUERPO, 12), wrap="word", fg_color=CAMPO, corner_radius=3,
+                               border_width=0, text_color=TEXTO)
+        notas.pack(fill="x", padx=28)
+        notas.insert("1.0", info["notas"].replace("**", "").replace("`", "") or "Sin notas.")
+        notas.configure(state="disabled")
+        barra = ctk.CTkProgressBar(dlg, height=6, corner_radius=3, progress_color=COBRE, fg_color=LINEA)
+        barra.set(0)
+        estado = ctk.CTkLabel(dlg, text="", font=(CUERPO, 11), text_color=TEXTO_2, anchor="w")
+        botones = ctk.CTkFrame(dlg, fg_color="transparent")
+        botones.pack(side="bottom", fill="x", padx=28, pady=20)
+        estado.pack(side="bottom", fill="x", padx=28)
+        barra.pack(side="bottom", fill="x", padx=28, pady=(0, 6))
+        cancelar = {"v": False}
+
+        def cerrar():
+            cancelar["v"] = True
+            dlg.destroy()
+
+        boton(botones, "Más tarde", cerrar, principal=False, width=110).pack(side="right", padx=(8, 0))
+        if actualizador.es_instalado() and info["instalador"]:
+            btn = boton(botones, "Actualizar ahora", lambda: empezar(), width=150)
+        else:
+            # Portable o código fuente: no se puede reemplazar a sí mismo, se abre la página de descarga
+            btn = boton(botones, "Ir a la descarga", lambda: (webbrowser.open(info["pagina"]), cerrar()), width=150)
+            estado.configure(text="La versión portable se actualiza descargando el archivo nuevo desde GitHub.")
+        btn.pack(side="right")
+        dlg.protocol("WM_DELETE_WINDOW", cerrar)
+
+        def empezar():
+            btn.configure(state="disabled", text="Descargando…")
+            mb = info["instalador"]["tamano"] / 1048576
+
+            def progreso(leido, total):
+                self.after(0, lambda: (barra.set(leido / total),
+                                       estado.configure(text=f"{num(leido / 1048576, 1)} de {num(mb, 1)} MB")))
+
+            def tarea():
+                try:
+                    ruta = actualizador.descargar(info["instalador"], progreso, lambda: cancelar["v"])
+                except InterruptedError:
+                    return
+                except Exception as e:  # noqa: BLE001
+                    self.after(0, lambda: (estado.configure(text=str(e), text_color=COBRE),
+                                           btn.configure(state="normal", text="Reintentar")))
+                    return
+                self.after(0, lambda: instalar(ruta))
+
+            threading.Thread(target=tarea, daemon=True).start()
+
+        def instalar(ruta):
+            estado.configure(text="Huella SHA-256 verificada. Instalando; PULSO se volverá a abrir solo.",
+                             text_color=PETROLEO)
+            dlg.update()
+            actualizador.instalar(ruta)
+            self.after(800, self.destroy)
 
     def ir(self, clave, procesar=False, exportar=False, region=None, categoria=None):
         for c, p in self.paginas.items():
