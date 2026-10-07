@@ -1,0 +1,16 @@
+# Entorno y compilación
+venv/
+.venv/
+__pycache__/
+build/
+dist/
+*.spec
+
+# Datos originales de Olist (se bajan con descargar_datos.py)
+raw/
+
+# Salidas generadas
+reporte_pruebas.xlsx
+*.pptx
+ppt/
+*.exe

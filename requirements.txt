@@ -1,0 +1,12 @@
+customtkinter==6.0.0
+joblib==1.6.0
+matplotlib==3.11.2
+numpy==2.4.6
+openpyxl==3.1.5
+pandas==3.0.6
+pillow==12.3.0
+scikit-learn==1.9.1
+scipy==1.17.1
+# solo para compilar el .exe y regenerar la presentación
+pyinstaller==6.22.3
+python-pptx==1.0.2
