@@ -28,14 +28,22 @@ Ejecutar de todas formas*.
 
 | Módulo | Qué hace |
 |---|---|
-| Inicio | KPIs del último mes con tendencia, alertas generadas por los datos, acciones rápidas y estado de los canales |
+| Inicio | Resumen del mes: KPIs con variación, ventas de los últimos 12 meses, categorías líderes, nota según días de entrega y alertas generadas por los datos |
 | Analítica | Ventas, logística y pagos con filtros por año, región y categoría; insights con acción recomendada; exportación a Excel |
 | Bandeja IA | Clasifica cada reseña (sentimiento y tema), explica qué palabras pesaron, asigna prioridad, área y canal, redacta la respuesta en español y portugués y exporta los tickets para un CRM |
 | Voz del cliente | La IA aplicada a todas las reseñas: tendencia de reclamos, motivo en alza y ranking de vendedores en riesgo |
 | Modelo IA | Matriz de confusión y métricas por clase, suite de casos de prueba y generador de casos nuevos en vivo |
-| Canales | 7 integraciones conectables y 8 reglas de automatización; al desactivar un canal, la bandeja se ajusta sola |
+| Canales | 8 integraciones conectables y 9 reglas de automatización; al desactivar un canal, la bandeja se ajusta sola |
 
-Las integraciones son simuladas: la app no envía mensajes reales por WhatsApp ni por correo.
+**Telegram es una integración real:** cuando la Bandeja IA detecta un ticket de prioridad alta (al procesar la
+bandeja o al probar un mensaje), PULSO lo envía al chat que configures. En *Canales → Telegram → Configurar*:
+
+1. En Telegram, escribe a [@BotFather](https://t.me/BotFather), envía `/newbot` y copia el token.
+2. Pega el token en PULSO y aprieta *Verificar*.
+3. Abre tu bot, envíale `/start` y aprieta *Detectar chat*. Luego *Enviar mensaje de prueba* y *Guardar*.
+
+El token se guarda solo en ese computador (`%APPDATA%\PULSO\config.json`), nunca en el repositorio. Las demás
+integraciones (WhatsApp, email, CRM, etc.) son simuladas: la app no envía mensajes reales por esos canales.
 
 ## El modelo de IA
 
@@ -84,5 +92,6 @@ modelo guardado depende de ella.
 | `descargar_datos.py` | Baja los CSV originales a `raw/` |
 | `probar_modelo.py` | Pruebas del modelo por terminal |
 | `actualizador.py` | Actualización automática desde los Releases de GitHub |
+| `telegram_bot.py` | Avisos de tickets críticos por Telegram |
 | `build.bat`, `installer/pulso.iss` | Compilación del .exe y del instalador |
 | `build_deck.py`, `make_icon.py` | Presentación de la evaluación (necesita la plantilla, que no está en el repositorio) e ícono |

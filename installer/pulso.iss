@@ -49,5 +49,11 @@ Name: "{autodesktop}\PULSO"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopic
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,PULSO}"; Flags: nowait postinstall skipifsilent
-; Actualización automática (instalador lanzado en silencio desde la app): reabrir PULSO al terminar
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
+; Actualización automática (la app lanza el instalador con /RELAUNCH): reabrir PULSO al terminar
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: DebeReabrir
+
+[Code]
+function DebeReabrir: Boolean;
+begin
+  Result := WizardSilent and (Pos('/RELAUNCH', UpperCase(GetCmdTail)) > 0);
+end;

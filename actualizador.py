@@ -84,5 +84,5 @@ def descargar(instalador, progreso=None, cancelado=lambda: False):
 
 def instalar(ruta):
     """Lanza el instalador en silencio. Quien llama debe cerrar la app justo después."""
-    subprocess.Popen([ruta, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS"],
+    subprocess.Popen([ruta, "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH"],
                      close_fds=True)

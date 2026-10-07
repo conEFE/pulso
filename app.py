@@ -26,6 +26,7 @@ import pandas as pd
 from tkinter import filedialog, messagebox, ttk
 
 import actualizador
+import telegram_bot
 from casos_prueba import ESCENARIOS, SUITE, generar
 
 # Clases del modelo guardado: se importan explícitamente para que PyInstaller las incluya en el .exe
@@ -38,7 +39,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 APP_NOMBRE = "PULSO"
-VERSION = "1.4.0"
+VERSION = "1.5.0"
 ESPACIO = "Olist Store"
 
 # ---------------------------------------------------------------- identidad visual
@@ -129,12 +130,16 @@ CANALES = [
      "hace": "Publica campañas en fechas peak y difunde las reseñas positivas que marca la IA."},
     {"id": "teams", "nombre": "Microsoft Teams", "publico": "Equipo interno", "activo": True,
      "hace": "Avisa a Logística, Calidad y Finanzas cuando entra un ticket crítico de su área."},
+    # Integración real (no simulada): se configura con el token de un bot de Telegram
+    {"id": "telegram", "nombre": "Telegram", "publico": "Equipo interno", "activo": False,
+     "hace": "Envía al celular un aviso en segundos cada vez que la Bandeja IA detecta un ticket crítico."},
 ]
 
 REGLAS = [
     ("Reseña negativa crítica (no recibido, defecto, reembolso)", "Responder y abrir ticket", "whatsapp", "2 h"),
     ("Reseña negativa no crítica", "Responder y abrir ticket", "email", "24 h"),
     ("Ticket de prioridad alta creado", "Alertar al área responsable", "teams", "inmediato"),
+    ("Ticket de prioridad alta creado", "Avisar al celular del equipo", "telegram", "inmediato"),
     ("Reseña positiva", "Agradecer, enviar cupón e invitar a compartir", "redes", "72 h"),
     ("Pedido supera la fecha prometida", "Aviso proactivo al cliente", "whatsapp", "mismo día"),
     ("Boleto emitido sin pagar por 48 h", "Recordatorio de pago", "email", "48 h"),
@@ -340,12 +345,15 @@ class Datos:
             "erp": f"Unos {num(ev['pedidos_mes'])} pedidos al mes pasan del marketplace al vendedor.",
             "redes": f"El peak de ventas fue {mes_txt(ev['mes_peak'])} (Black Friday).",
             "teams": f"{pct(ev['pct_atraso'])} de los pedidos se atrasa y requiere coordinar a varias áreas.",
+            "telegram": f"{pct(ev['pct_neg_entrega'], 0)} de los reclamos negativos son por la entrega y deben "
+                        "responderse en 2 horas, aunque nadie esté mirando la bandeja.",
         }
 
 
 # ---------------------------------------------------------------- componentes de interfaz
 def panel(padre, **kw):
-    return ctk.CTkFrame(padre, fg_color=BLANCO, corner_radius=4, border_width=1, border_color=LINEA, **kw)
+    """Bloque de contenido del lienzo: sin marco; se separa por espacio y alineación (estilo reporte)."""
+    return ctk.CTkFrame(padre, fg_color="transparent", corner_radius=0, **kw)
 
 
 def linea(padre, **pack):
@@ -358,41 +366,50 @@ def rotulo(padre, texto, color=TEXTO_2, size=10):
 
 
 def titulo_panel(p, texto, nota=None):
+    """Título de un visual: nombre en tinta y una nota breve en gris debajo, como en un reporte."""
     fila = ctk.CTkFrame(p, fg_color="transparent")
-    fila.pack(fill="x", padx=20, pady=(14, 10))
-    ctk.CTkLabel(fila, text=texto, font=(DISPLAY_SB, 16), text_color=TINTA, anchor="w").pack(side="left")
+    fila.pack(fill="x", padx=4, pady=(14, 6))
+    ctk.CTkLabel(fila, text=texto, font=(DISPLAY_SB, 15), text_color=TINTA, anchor="w").pack(side="left")
     if nota:
-        ctk.CTkLabel(fila, text=nota, font=(CUERPO, 11), text_color=TEXTO_2).pack(side="right")
-    linea(p, padx=20)
+        ctk.CTkLabel(fila, text=nota, font=(CUERPO, 11), text_color=TEXTO_2).pack(side="left", padx=(10, 0),
+                                                                                   pady=(3, 0))
     return fila
 
 
-def encabezado(padre, titulo):
-    """Título de página; devuelve un contenedor a la derecha para acciones."""
+def separador(padre, padx=36, pady=(14, 4)):
+    """Línea fina que separa filas de visuales en el lienzo."""
+    ctk.CTkFrame(padre, height=1, fg_color="#ECE8DE", corner_radius=0).pack(fill="x", padx=padx, pady=pady)
+
+
+def encabezado(padre, titulo, contexto=None):
+    """Encabezado del lienzo: contexto pequeño arriba y título; devuelve un contenedor a la derecha."""
     caja = ctk.CTkFrame(padre, fg_color="transparent")
-    caja.pack(fill="x", padx=32, pady=(24, 16))
+    caja.pack(fill="x", padx=36, pady=(26, 10))
     acciones = ctk.CTkFrame(caja, fg_color="transparent", width=1, height=1)
-    acciones.pack(side="right")
-    ctk.CTkLabel(caja, text=titulo, font=(DISPLAY_SB, 28), text_color=TINTA, anchor="w").pack(side="left")
+    acciones.pack(side="right", anchor="s")
+    textos = ctk.CTkFrame(caja, fg_color="transparent")
+    textos.pack(side="left", anchor="w")
+    ctk.CTkLabel(textos, text=contexto or ESPACIO, font=(CUERPO, 11), text_color=TEXTO_2, anchor="w").pack(fill="x")
+    ctk.CTkLabel(textos, text=titulo, font=(DISPLAY_SB, 26), text_color=TINTA, anchor="w").pack(fill="x")
     return acciones
 
 
 class FranjaKPI(ctk.CTkFrame):
-    """Una sola franja con indicadores separados por líneas finas."""
+    """Banda de indicadores: números grandes separados por líneas verticales finas, sin marco."""
 
     def __init__(self, padre, items):
-        super().__init__(padre, fg_color=BLANCO, corner_radius=4, border_width=1, border_color=LINEA)
+        super().__init__(padre, fg_color="transparent", corner_radius=0)
         self.valores, self.notas = {}, {}
         for i, (clave, etiqueta, color) in enumerate(items):
             if i:
-                ctk.CTkFrame(self, width=1, height=1, fg_color=LINEA, corner_radius=0).grid(
-                    row=0, column=2 * i - 1, sticky="ns", pady=14)
+                ctk.CTkFrame(self, width=1, height=1, fg_color="#E4DFD3", corner_radius=0).grid(
+                    row=0, column=2 * i - 1, sticky="ns", pady=6)
             celda = ctk.CTkFrame(self, fg_color="transparent")
-            celda.grid(row=0, column=2 * i, sticky="nsew", padx=20, pady=14)
+            celda.grid(row=0, column=2 * i, sticky="nsew", padx=(4 if i == 0 else 18, 10), pady=6)
             self.grid_columnconfigure(2 * i, weight=1, uniform="kpi")
-            rotulo(celda, etiqueta, size=10).pack(fill="x")
-            self.valores[clave] = ctk.CTkLabel(celda, text="—", font=(DISPLAY_SB, 28), text_color=color, anchor="w")
-            self.valores[clave].pack(fill="x", pady=(2, 0))
+            ctk.CTkLabel(celda, text=etiqueta, font=(CUERPO, 12), text_color=TEXTO_2, anchor="w").pack(fill="x")
+            self.valores[clave] = ctk.CTkLabel(celda, text="—", font=(DISPLAY_SB, 30), text_color=color, anchor="w")
+            self.valores[clave].pack(fill="x")
             self.notas[clave] = ctk.CTkLabel(celda, text="", font=(CUERPO, 11), text_color=TEXTO_2, anchor="w")
             self.notas[clave].pack(fill="x")
 
@@ -412,8 +429,9 @@ def boton(padre, texto, comando, principal=True, **kw):
 
 
 def selector(padre, valores, comando=None, ancho=150):
-    return ctk.CTkOptionMenu(padre, values=valores, command=comando, width=ancho, corner_radius=3, height=32,
-                             fg_color=CAMPO, button_color="#E6E0D2", button_hover_color="#D9D2C1",
+    """Segmentador tipo Power BI: píldora clara con flecha."""
+    return ctk.CTkOptionMenu(padre, values=valores, command=comando, width=ancho, corner_radius=16, height=32,
+                             fg_color="#F1EEE6", button_color="#F1EEE6", button_hover_color="#E6E0D2",
                              text_color=TEXTO, dropdown_fg_color=BLANCO, dropdown_text_color=TEXTO,
                              dropdown_hover_color="#EFEBE1", font=(CUERPO, 12), dropdown_font=(CUERPO, 12))
 
@@ -457,7 +475,7 @@ def sparkline(padre, serie, color):
 # ---------------------------------------------------------------- Inicio
 class PaginaInicio(ctk.CTkScrollableFrame):
     def __init__(self, padre, app):
-        super().__init__(padre, fg_color=PAPEL)
+        super().__init__(padre, fg_color=BLANCO, corner_radius=10)
         self.app = app
         d = app.datos
         v = d.ventas
@@ -467,49 +485,83 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         if (v[v.mes == ultimo].fecha.dt.day.max() or 0) < 25:   # mes incompleto: usar el anterior
             ultimo = ultimo - 1
         self.ultimo, previo = ultimo, ultimo - 1
-        acciones = encabezado(self, f"{saludo}, equipo de Operaciones")
+        acciones = encabezado(self, "Resumen del mes",
+                              f"{saludo}  ·  {MESES_LARGOS[ultimo.month - 1].capitalize()} {ultimo.year} frente a "
+                              f"{MESES_LARGOS[previo.month - 1]}")
         boton(acciones, "Exportar informe", lambda: app.ir("analisis", exportar=True), principal=False,
               width=150).pack(side="right", padx=(8, 0))
         boton(acciones, "Procesar bandeja", lambda: app.ir("ia", procesar=True), width=150).pack(side="right")
 
-        # Tarjetas KPI del último mes con tendencia de 12 meses
+        # Banda de KPIs del último mes
         mensual = v.groupby("mes").agg(ventas=("valor", "sum"), pedidos=("valor", "size"), nota=("nota", "mean"),
                                        atraso=("atrasado", "mean"))
         mensual = mensual[mensual.index <= ultimo]
         a, b = mensual.loc[ultimo], mensual.loc[previo]
         hist = mensual.tail(12)
-        tarjetas = [
-            (f"Ventas · {mes_txt(ultimo)}", millones(a.ventas), variacion(a.ventas, b.ventas), hist.ventas.tolist(), TINTA, False),
-            (f"Pedidos · {mes_txt(ultimo)}", num(a.pedidos), variacion(a.pedidos, b.pedidos), hist.pedidos.tolist(), TINTA, False),
-            (f"Nota de clientes · {mes_txt(ultimo)}", num(a.nota, 2), variacion(a.nota, b.nota), hist.nota.tolist(), PETROLEO, False),
-            (f"Entregas atrasadas · {mes_txt(ultimo)}", pct(a.atraso), variacion(a.atraso, b.atraso, puntos=True), hist.atraso.tolist(),
-             COBRE, True),
-        ]
-        fila = ctk.CTkFrame(self, fg_color="transparent")
-        fila.pack(fill="x", padx=26)
-        for i, (lbl, val, (txt_var, delta), serie, color, menos_es_mejor) in enumerate(tarjetas):
-            c = panel(fila)
-            c.grid(row=0, column=i, sticky="nsew", padx=6)
-            fila.grid_columnconfigure(i, weight=1, uniform="t")
-            rotulo(c, lbl).pack(fill="x", padx=18, pady=(16, 0))
-            ctk.CTkLabel(c, text=val, font=(DISPLAY_SB, 30), text_color=TINTA, anchor="w").pack(fill="x", padx=18)
+        kpi = FranjaKPI(self, [("ventas", "Ventas", TINTA), ("pedidos", "Pedidos", TINTA),
+                               ("nota", "Nota de clientes", PETROLEO), ("atraso", "Entregas atrasadas", COBRE)])
+        kpi.pack(fill="x", padx=36, pady=(10, 0))
+        for clave, valor, (txt, delta), menos_es_mejor in [
+            ("ventas", millones(a.ventas), variacion(a.ventas, b.ventas), False),
+            ("pedidos", num(a.pedidos), variacion(a.pedidos, b.pedidos), False),
+            ("nota", num(a.nota, 2), variacion(a.nota, b.nota), False),
+            ("atraso", pct(a.atraso), variacion(a.atraso, b.atraso, puntos=True), True),
+        ]:
             bueno = (delta < 0) if menos_es_mejor else (delta > 0)
-            ctk.CTkLabel(c, text=txt_var, font=(CUERPO_SB, 11), anchor="w",
-                         text_color=PETROLEO if bueno else COBRE).pack(fill="x", padx=18)
-            sparkline(c, serie, color).pack(fill="x", padx=18, pady=(8, 4))
-            rotulo(c, "Últimos 12 meses", size=8).pack(fill="x", padx=18, pady=(0, 14))
+            kpi.set(clave, valor, txt.replace("mes anterior", MESES_LARGOS[previo.month - 1]))
+            kpi.notas[clave].configure(text_color=PETROLEO if bueno else COBRE, font=(CUERPO_SB, 11))
+        separador(self, pady=(18, 0))
 
-        cuerpo = ctk.CTkFrame(self, fg_color="transparent")
-        cuerpo.pack(fill="x", padx=32, pady=(16, 30))
-        cuerpo.grid_columnconfigure(0, weight=3, uniform="c")
-        cuerpo.grid_columnconfigure(1, weight=2, uniform="c")
+        # Fila 1: ventas de los últimos 12 meses + categorías líderes
+        fila1 = ctk.CTkFrame(self, fg_color="transparent")
+        fila1.pack(fill="x", padx=32)
+        fila1.grid_columnconfigure(0, weight=3, uniform="f1")
+        fila1.grid_columnconfigure(1, weight=2, uniform="f1")
+        p1 = panel(fila1)
+        p1.grid(row=0, column=0, sticky="nsew", padx=(0, 28))
+        titulo_panel(p1, "Ventas mensuales", "miles de R$ · últimos 12 meses")
+        fig = Figure(figsize=(7.2, 2.6), dpi=100, facecolor=BLANCO)
+        fig.subplots_adjust(left=0.06, right=0.99, top=0.88, bottom=0.12)
+        ax = fig.add_subplot(111)
+        valores = hist.ventas.values / 1e3
+        ip = valores.argmax()
+        ax.bar(range(len(valores)), valores, width=0.66, color=[COBRE if i == ip else TINTA for i in range(len(valores))])
+        ax.set_xticks(range(len(valores)), [mes_txt(p) for p in hist.index], fontsize=8)
+        ax.annotate(f"{mes_txt(hist.index[ip])} · {num(valores[ip])}", (ip, valores[ip]), xytext=(0, 5),
+                    textcoords="offset points", ha="center", fontsize=8, color=COBRE)
+        ax.set_ylim(0, valores.max() * 1.18)
+        ax.tick_params(axis="y", labelsize=8)
+        FigureCanvasTkAgg(fig, master=p1).get_tk_widget().pack(fill="x", padx=4)
 
-        # Requiere atención
-        pa = panel(cuerpo)
-        pa.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
-        titulo_panel(pa, "Requiere atención")
+        p2 = panel(fila1)
+        p2.grid(row=0, column=1, sticky="nsew")
+        anio = v[(v.mes > ultimo - 12) & (v.mes <= ultimo)]
+        cats = (anio.groupby("categoria").valor.sum() / anio.valor.sum()).nlargest(6).sort_values()
+        titulo_panel(p2, "Categorías líderes", "participación en ventas · 12 meses")
+        fig2 = Figure(figsize=(4.8, 2.6), dpi=100, facecolor=BLANCO)
+        fig2.subplots_adjust(left=0.36, right=0.9, top=0.95, bottom=0.05)
+        ax2 = fig2.add_subplot(111)
+        ax2.barh(cats.index, cats.values * 100, height=0.56, color=[PIZARRA] * (len(cats) - 1) + [TINTA])
+        for i, val in enumerate(cats.values):
+            ax2.text(val * 100, i, f"  {pct(val)}", va="center", fontsize=8.5, color=TEXTO)
+        ax2.set_xlim(0, cats.max() * 100 * 1.25)
+        ax2.grid(False)
+        ax2.set_xticks([])
+        ax2.spines["bottom"].set_visible(False)
+        ax2.tick_params(axis="y", labelsize=9, colors=TEXTO)
+        FigureCanvasTkAgg(fig2, master=p2).get_tk_widget().pack(fill="x", padx=4)
+        separador(self, pady=(10, 0))
+
+        # Fila 2: alertas + nota según días de entrega
+        fila2 = ctk.CTkFrame(self, fg_color="transparent")
+        fila2.pack(fill="x", padx=32, pady=(0, 24))
+        fila2.grid_columnconfigure(0, weight=3, uniform="f2")
+        fila2.grid_columnconfigure(1, weight=2, uniform="f2")
+        pa = panel(fila2)
+        pa.grid(row=0, column=0, sticky="nsew", padx=(0, 28))
+        titulo_panel(pa, "Requiere atención", "generado a partir de los datos")
         self.alertas = ctk.CTkFrame(pa, fg_color="transparent")
-        self.alertas.pack(fill="x", padx=20, pady=(4, 14))
+        self.alertas.pack(fill="x", padx=4, pady=(2, 0))
 
         reciente = v[(v.mes > ultimo - 3) & (v.mes <= ultimo)]
         reg = reciente.groupby("region").atrasado.mean().sort_values(ascending=False)
@@ -517,161 +569,139 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         cat = v[v.categoria.isin(top)]
         var_cat = (cat[cat.mes == ultimo].groupby("categoria").valor.sum() /
                    cat[cat.mes == previo].groupby("categoria").valor.sum() - 1).dropna().sort_values()
-        boletos = (v[v.mes == ultimo].pago == "Boleto bancario").sum()
         vend = reciente.groupby("vendedor").agg(n=("atrasado", "size"), atraso=("atrasado", "mean"))
         vend_mal = int(((vend.n >= 10) & (vend.atraso > 0.10)).sum())
         self.lista_alertas = [
-            ("bandeja", COBRE, "", "", "Abrir bandeja", lambda: app.ir("ia")),
+            ("bandeja", COBRE, "", "", "Abrir", lambda: app.ir("ia")),
             ("reg", COBRE, f"Atrasos altos en el {reg.index[0]}",
-             f"{pct(reg.iloc[0])} de los pedidos de los últimos 3 meses llegó tarde (promedio general "
-             f"{pct(reciente.atrasado.mean())}).", "Ver analítica", lambda: app.ir("analisis", region=reg.index[0])),
+             f"{pct(reg.iloc[0])} de los pedidos de los últimos 3 meses llegó tarde (promedio "
+             f"{pct(reciente.atrasado.mean())}).", "Ver", lambda: app.ir("analisis", region=reg.index[0])),
             ("vend", OCRE, f"{vend_mal} vendedores con más de 10% de atrasos",
-             "Con al menos 10 pedidos en los últimos 3 meses. La regla del Seller Center les envía un plan de mejora.",
-             "Ver reglas", lambda: app.ir("canales")),
-            ("cat", OCRE, f"«{var_cat.index[0]}» cayó {pct(abs(var_cat.iloc[0]), 0)} en el mes",
-             f"Ventas de {MESES_LARGOS[ultimo.month - 1]} frente a {MESES_LARGOS[previo.month - 1]}, entre las 15 "
-             "categorías principales.", "Ver categoría", lambda: app.ir("analisis", categoria=var_cat.index[0])),
-            ("bol", PIZARRA, f"{num(boletos)} pedidos pagados con boleto en el mes",
-             "El recordatorio automático por email reduce los boletos que vencen sin pagarse.", "Ver canales",
+             "Con al menos 10 pedidos en 3 meses; el Seller Center les envía un plan de mejora.", "Ver",
              lambda: app.ir("canales")),
+            ("cat", OCRE, f"«{var_cat.index[0]}» cayó {pct(abs(var_cat.iloc[0]), 0)} en el mes",
+             f"Ventas de {MESES_LARGOS[ultimo.month - 1]} frente a {MESES_LARGOS[previo.month - 1]}.", "Ver",
+             lambda: app.ir("analisis", categoria=var_cat.index[0])),
         ]
         if d.tema_alza:
             t, antes, ahora = d.tema_alza
             self.lista_alertas.insert(1, (
                 "alza", COBRE, f"«{t}» crece entre los reclamos",
-                f"Pasó de {pct(antes, 0)} a {pct(ahora, 0)} de las reseñas negativas en los últimos 3 meses, según "
-                "la IA.", "Ver voz del cliente", lambda: app.ir("voz")))
+                f"De {pct(antes, 0)} a {pct(ahora, 0)} de las reseñas negativas en los últimos 3 meses.", "Ver",
+                lambda: app.ir("voz")))
         self.pintar_alertas()
 
-        # Columna derecha: estado de canales + modelo
-        der = ctk.CTkFrame(cuerpo, fg_color="transparent")
-        der.grid(row=0, column=1, sticky="nsew")
-        pc = panel(der)
-        pc.pack(fill="x")
-        f = titulo_panel(pc, "Canales")
-        ctk.CTkButton(f, text="Administrar  →", command=lambda: app.ir("canales"), fg_color="transparent",
-                      hover_color="#EFEBE1", text_color=TINTA, font=(CUERPO_SB, 11), width=100, height=24).pack(
-            side="right")
-        self.lista_canales = ctk.CTkFrame(pc, fg_color="transparent")
-        self.lista_canales.pack(fill="x", padx=20, pady=(8, 14))
-        self.pintar_canales()
-
-        pm = ctk.CTkFrame(der, fg_color=TINTA, corner_radius=4)
-        pm.pack(fill="x", pady=(12, 0))
-        rotulo(pm, "Modelo de IA", "#9FB0C2", 9).pack(fill="x", padx=20, pady=(16, 0))
-        ctk.CTkLabel(pm, text=pct(d.precision, 0), font=(DISPLAY_SB, 40), text_color="#F0A58C", anchor="w").pack(
-            fill="x", padx=20)
-        ctk.CTkLabel(pm, text=f"de acierto en {num(d.n_test)} reseñas que el modelo no había visto. Entrenado con "
-                              f"{num(d.n_train)} reseñas reales.", font=(CUERPO, 12), text_color="#D5DEE8",
-                     anchor="w", justify="left", wraplength=380).pack(fill="x", padx=20, pady=(0, 16))
+        p4 = panel(fila2)
+        p4.grid(row=0, column=1, sticky="nsew")
+        titulo_panel(p4, "Nota según días de entrega", "promedio 1–5 · 12 meses")
+        tramos = pd.cut(anio.dias_entrega, [-1, 7, 14, 21, 30, 1000], labels=["0–7", "8–14", "15–21", "22–30", "+30"])
+        nota_t = anio.groupby(tramos, observed=False).nota.mean()
+        fig3 = Figure(figsize=(4.8, 2.4), dpi=100, facecolor=BLANCO)
+        fig3.subplots_adjust(left=0.04, right=0.98, top=0.9, bottom=0.14)
+        ax3 = fig3.add_subplot(111)
+        ax3.bar(nota_t.index.astype(str), nota_t.values, width=0.58,
+                color=[PETROLEO if (pd.notna(x) and x >= 4) else COBRE for x in nota_t.values])
+        for i, val in enumerate(nota_t.values):
+            if pd.notna(val):
+                ax3.text(i, val + 0.08, num(val, 1), ha="center", fontsize=9, color=TEXTO)
+        ax3.axhline(4, color=TEXTO_2, lw=0.8, ls=(0, (4, 3)))
+        ax3.set_ylim(0, 5.3)
+        ax3.set_yticks([])
+        ax3.grid(False)
+        ax3.tick_params(axis="x", labelsize=8.5)
+        ax3.set_xlabel("días desde la compra", fontsize=8)
+        FigureCanvasTkAgg(fig3, master=p4).get_tk_widget().pack(fill="x", padx=4)
 
     def pintar_alertas(self):
         for w in self.alertas.winfo_children():
             w.destroy()
         res = self.app.paginas["ia"].resultados if "ia" in self.app.paginas else pd.DataFrame()
-        for i, (clave, color, titulo, detalle, accion, cmd) in enumerate(self.lista_alertas):
+        for clave, color, titulo, detalle, accion, cmd in self.lista_alertas:
             if clave == "bandeja":
                 if res.empty:
                     continue
                 alta = int((res.prioridad == "Alta").sum())
-                titulo = f"{alta} reclamos de prioridad alta en la bandeja"
-                detalle = (f"De {len(res)} mensajes nuevos clasificados por la IA. Deben responderse en menos de "
-                           "2 horas.")
-            if i:
-                linea(self.alertas)
+                titulo = f"{alta} reclamos urgentes en la bandeja"
+                detalle = f"De {len(res)} mensajes nuevos clasificados por la IA; responder en menos de 2 horas."
             f = ctk.CTkFrame(self.alertas, fg_color="transparent")
-            f.pack(fill="x", pady=10)
-            ctk.CTkFrame(f, width=10, height=10, corner_radius=5, fg_color=color).pack(side="left", anchor="n",
-                                                                                      pady=6, padx=(0, 14))
+            f.pack(fill="x", pady=7)
+            ctk.CTkFrame(f, width=3, height=38, corner_radius=0, fg_color=color).pack(side="left", padx=(0, 14))
             txt = ctk.CTkFrame(f, fg_color="transparent")
             txt.pack(side="left", fill="x", expand=True)
             ctk.CTkLabel(txt, text=titulo, font=(CUERPO_SB, 13), text_color=TEXTO, anchor="w").pack(fill="x")
             ctk.CTkLabel(txt, text=detalle, font=(CUERPO, 12), text_color=TEXTO_2, anchor="w", justify="left",
-                         wraplength=560).pack(fill="x")
-            boton(f, accion, cmd, principal=False, width=120, height=30).pack(side="right", padx=(12, 0))
-
-    def pintar_canales(self):
-        for w in self.lista_canales.winfo_children():
-            w.destroy()
-        for c in CANALES:
-            f = ctk.CTkFrame(self.lista_canales, fg_color="transparent")
-            f.pack(fill="x", pady=4)
-            activo = self.app.canales[c["id"]]
-            ctk.CTkFrame(f, width=8, height=8, corner_radius=4, fg_color=PETROLEO if activo else "#C9C3B5").pack(
-                side="left", padx=(0, 10))
-            ctk.CTkLabel(f, text=c["nombre"], font=(CUERPO, 12), text_color=TEXTO, anchor="w").pack(side="left")
-            ctk.CTkLabel(f, text="Activo" if activo else "Inactivo", font=(CUERPO_SB, 11),
-                         text_color=PETROLEO if activo else TEXTO_2).pack(side="right")
+                         wraplength=640).pack(fill="x")
+            ctk.CTkButton(f, text=f"{accion}  →", command=cmd, width=70, height=28, fg_color="transparent",
+                          hover_color="#F1EEE6", text_color=TINTA, font=(CUERPO_SB, 12)).pack(side="right")
 
 
 # ---------------------------------------------------------------- Analítica
 class PaginaAnalisis(ctk.CTkScrollableFrame):
     def __init__(self, padre, app):
-        super().__init__(padre, fg_color=PAPEL)
+        super().__init__(padre, fg_color=BLANCO, corner_radius=10)
         self.app = app
         d = app.datos
         self.d = d
-        acciones = encabezado(self, "Analítica comercial")
-        boton(acciones, "Exportar a Excel", self.exportar, principal=False, width=150).pack(side="right")
-
-        filtros = panel(self)
-        filtros.pack(fill="x", padx=32, pady=(0, 12))
-        rotulo(filtros, "Año").pack(side="left", padx=(20, 8), pady=14)
-        self.f_anio = selector(filtros, ["Todos", "2017", "2018"], self.actualizar, 110)
-        self.f_anio.pack(side="left")
-        rotulo(filtros, "Región").pack(side="left", padx=(24, 8))
-        self.f_region = selector(filtros, ["Todas"] + sorted(d.ventas.region.dropna().unique()), self.actualizar, 140)
-        self.f_region.pack(side="left")
-        rotulo(filtros, "Categoría").pack(side="left", padx=(24, 8))
+        acciones = encabezado(self, "Analítica comercial", f"{ESPACIO}  ·  ventas, logística y pagos")
+        # Segmentadores (slicers) en el encabezado, como en un reporte de Power BI
+        ctk.CTkButton(acciones, text="Limpiar", command=self.limpiar, fg_color="transparent", hover_color="#F1EEE6",
+                      text_color=TEXTO_2, font=(CUERPO_SB, 11), width=70).pack(side="right", padx=(6, 0))
+        boton(acciones, "Exportar a Excel", self.exportar, principal=False, width=140).pack(side="right", padx=(14, 0))
         top = d.ventas.groupby("categoria").valor.sum().nlargest(20).index.tolist()
-        self.f_cat = selector(filtros, ["Todas"] + sorted(top), self.actualizar, 230)
-        self.f_cat.pack(side="left")
-        ctk.CTkButton(filtros, text="Limpiar filtros", command=self.limpiar, fg_color="transparent",
-                      hover_color="#EFEBE1", text_color=TEXTO_2, font=(CUERPO_SB, 11), width=110).pack(
-            side="right", padx=14)
+        self.f_cat = selector(acciones, ["Todas las categorías"] + sorted(top), self.actualizar, 230)
+        self.f_cat.pack(side="right", padx=(6, 0))
+        self.f_region = selector(acciones, ["Todas las regiones"] + sorted(d.ventas.region.dropna().unique()),
+                                 self.actualizar, 170)
+        self.f_region.pack(side="right", padx=(6, 0))
+        self.f_anio = selector(acciones, ["Todos los años", "2017", "2018"], self.actualizar, 140)
+        self.f_anio.pack(side="right")
 
         self.kpi = FranjaKPI(self, [
             ("ventas", "Ventas", TINTA), ("pedidos", "Pedidos", TINTA), ("ticket", "Ticket promedio", TINTA),
             ("nota", "Nota promedio", PETROLEO), ("atraso", "Entregas atrasadas", COBRE),
             ("dias", "Días de entrega", TINTA),
         ])
-        self.kpi.pack(fill="x", padx=32, pady=(0, 12))
+        self.kpi.pack(fill="x", padx=36, pady=(10, 0))
+        separador(self, pady=(18, 0))
 
         cg = panel(self)
-        cg.pack(fill="x", padx=32, pady=(0, 12))
+        cg.pack(fill="x", padx=28, pady=(0, 4))
         self.fig = Figure(figsize=(12, 8.2), dpi=100, facecolor=BLANCO)
         self.canvas = FigureCanvasTkAgg(self.fig, master=cg)
-        self.canvas.get_tk_widget().pack(fill="both", expand=True, padx=10, pady=10)
+        self.canvas.get_tk_widget().pack(fill="both", expand=True)
+        separador(self)
 
         self.ph = panel(self)
         self.ph.pack(fill="x", padx=32, pady=(0, 30))
-        titulo_panel(self.ph, "Insights")
+        titulo_panel(self.ph, "Insights", "se recalculan con cada filtro")
         self.hallazgos = ctk.CTkFrame(self.ph, fg_color="transparent")
-        self.hallazgos.pack(fill="x", padx=20, pady=(4, 16))
+        self.hallazgos.pack(fill="x", padx=4, pady=(4, 16))
         self.actualizar()
 
+    TODOS_ANIOS, TODAS_REGIONES, TODAS_CATS = "Todos los años", "Todas las regiones", "Todas las categorías"
+
     def limpiar(self):
-        self.f_anio.set("Todos")
-        self.f_region.set("Todas")
-        self.f_cat.set("Todas")
+        self.f_anio.set(self.TODOS_ANIOS)
+        self.f_region.set(self.TODAS_REGIONES)
+        self.f_cat.set(self.TODAS_CATS)
         self.actualizar()
 
     def aplicar(self, region=None, categoria=None):
-        self.f_anio.set("Todos")
-        self.f_region.set(region or "Todas")
+        self.f_anio.set(self.TODOS_ANIOS)
+        self.f_region.set(region or self.TODAS_REGIONES)
         if categoria and categoria in self.f_cat.cget("values"):
             self.f_cat.set(categoria)
         else:
-            self.f_cat.set("Todas")
+            self.f_cat.set(self.TODAS_CATS)
         self.actualizar()
 
     def filtrado(self):
         v = self.d.ventas
-        if self.f_anio.get() != "Todos":
+        if self.f_anio.get() != self.TODOS_ANIOS:
             v = v[v.anio == int(self.f_anio.get())]
-        if self.f_region.get() != "Todas":
+        if self.f_region.get() != self.TODAS_REGIONES:
             v = v[v.region == self.f_region.get()]
-        if self.f_cat.get() != "Todas":
+        if self.f_cat.get() != self.TODAS_CATS:
             v = v[v.categoria == self.f_cat.get()]
         return v
 
@@ -789,7 +819,7 @@ class PaginaAnalisis(ctk.CTkScrollableFrame):
         rec = (v.groupby("cliente").size() > 1).mean()
         h.append(("Fidelización", f"Solo {pct(rec)} de los clientes compró más de una vez en el período.",
                   "Usar el CRM para campañas post-compra: cupones, email segmentado y programa de referidos."))
-        if self.f_region.get() == "Todas":
+        if self.f_region.get() == self.TODAS_REGIONES:
             h.append(("Cobertura territorial", f"El Sudeste concentra {pct((v.region == 'Sudeste').mean())} de los "
                                                "pedidos; Norte y Nordeste tienen los plazos más largos.",
                       "Operar centros de distribución en el Sudeste y ajustar los plazos prometidos en las regiones "
@@ -826,7 +856,7 @@ class PaginaIA(ctk.CTkScrollableFrame):
             ("canal", "Canal de respuesta", 170)]
 
     def __init__(self, padre, app):
-        super().__init__(padre, fg_color=PAPEL)
+        super().__init__(padre, fg_color=BLANCO, corner_radius=10)
         self.app = app
         d = app.datos
         self.d = d
@@ -841,11 +871,13 @@ class PaginaIA(ctk.CTkScrollableFrame):
         rotulo(acciones, "Mensajes").pack(side="right")
 
         estado = ctk.CTkFrame(self, fg_color="transparent")
-        estado.pack(fill="x", padx=32, pady=(0, 10))
+        estado.pack(fill="x", padx=36, pady=(0, 10))
         pastilla(estado, "  IA ACTIVA  ", PETROLEO).pack(side="left")
         ctk.CTkLabel(estado, text=f"Modelo de sentimiento v1 · TF-IDF + regresión logística · {pct(d.precision, 0)} de "
                                   f"acierto en {num(d.n_test)} reseñas no vistas", font=(CUERPO, 12),
                      text_color=TEXTO_2).pack(side="left", padx=12)
+        self.lbl_tg = ctk.CTkLabel(estado, text="", font=(CUERPO_SB, 12), text_color=TEXTO_2)
+        self.lbl_tg.pack(side="right")
 
         self.kpi = FranjaKPI(self, [
             ("proc", "Procesados", TINTA), ("neg", "Negativos", COBRE), ("alta", "Prioridad alta", COBRE),
@@ -971,7 +1003,14 @@ class PaginaIA(ctk.CTkScrollableFrame):
                                                                       via="pelo WhatsApp" if wa else "por e-mail")})
         return pd.DataFrame(filas)
 
-    def procesar(self):
+    def aviso_telegram(self, n, error):
+        if error:
+            self.lbl_tg.configure(text=f"Telegram: {error}", text_color=COBRE)
+        elif n:
+            self.lbl_tg.configure(text=f"Telegram · {n} aviso{'s' if n != 1 else ''} de tickets críticos enviado"
+                                       f"{'s' if n != 1 else ''}", text_color=PETROLEO)
+
+    def procesar(self, avisar=True):
         n = int(self.n_msg.get())
         muestra = self.d.resenas.sample(n)
         t0 = time.perf_counter()
@@ -993,6 +1032,8 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.kpi.set("ahorro", f"{num(manual_min / 60, 1)} h" if manual_min >= 60 else f"{manual_min} min",
                      "supuesto: 3 min por mensaje")
         self.app.bandeja_actualizada(alta)
+        if avisar:
+            self.app.avisar_telegram(res.to_dict("records"), self.aviso_telegram)
 
     def pintar_tabla(self):
         self.tabla.delete(*self.tabla.get_children())
@@ -1055,7 +1096,9 @@ class PaginaIA(ctk.CTkScrollableFrame):
     def analizar_propio(self):
         texto = self.entrada.get().strip()
         if texto:
-            self.mostrar(self.clasificar([texto]).iloc[0])
+            r = self.clasificar([texto]).iloc[0]
+            self.mostrar(r)
+            self.app.avisar_telegram([r.to_dict()], self.aviso_telegram)
 
     def copiar(self):
         self.clipboard_clear()
@@ -1080,7 +1123,7 @@ COLORES_TEMA = {"No recibido": COBRE, "Retraso en la entrega": OCRE, "Producto i
 
 class PaginaVoz(ctk.CTkScrollableFrame):
     def __init__(self, padre, app):
-        super().__init__(padre, fg_color=PAPEL)
+        super().__init__(padre, fg_color=BLANCO, corner_radius=10)
         self.app = app
         d = app.datos
         voz, rk = d.voz, d.ranking
@@ -1245,7 +1288,7 @@ class PaginaModelo(ctk.CTkScrollableFrame):
             ("obt", "Resultado de la IA", 270), ("conf", "Confianza", 80), ("ok", "Resultado", 90)]
 
     def __init__(self, padre, app):
-        super().__init__(padre, fg_color=PAPEL)
+        super().__init__(padre, fg_color=BLANCO, corner_radius=10)
         self.app = app
         d = app.datos
         self.d = d
@@ -1451,12 +1494,12 @@ class PaginaModelo(ctk.CTkScrollableFrame):
 # ---------------------------------------------------------------- Canales e integraciones
 class PaginaCanales(ctk.CTkScrollableFrame):
     def __init__(self, padre, app):
-        super().__init__(padre, fg_color=PAPEL)
+        super().__init__(padre, fg_color=BLANCO, corner_radius=10)
         self.app = app
-        encabezado(self, "Canales e integraciones")
+        encabezado(self, "Canales e integraciones", f"{ESPACIO}  ·  avisos, respuestas y coordinación")
 
         self.resumen = ctk.CTkLabel(self, text="", font=(CUERPO_SB, 12), text_color=TEXTO_2, anchor="w")
-        self.resumen.pack(fill="x", padx=32, pady=(0, 8))
+        self.resumen.pack(fill="x", padx=36, pady=(0, 8))
 
         grid = ctk.CTkFrame(self, fg_color="transparent")
         grid.pack(fill="x", padx=26)
@@ -1483,6 +1526,14 @@ class PaginaCanales(ctk.CTkScrollableFrame):
             self.estados[c["id"]].pack(side="right")
             ctk.CTkLabel(card, text=c["hace"], font=(CUERPO, 12), text_color=TEXTO, anchor="w", justify="left",
                          wraplength=280).pack(fill="x", padx=18, pady=(8, 8))
+            if c["id"] == "telegram":
+                fila_tg = ctk.CTkFrame(card, fg_color="transparent")
+                fila_tg.pack(fill="x", padx=18, pady=(0, 8))
+                self.lbl_tg = ctk.CTkLabel(fila_tg, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2, anchor="w")
+                self.lbl_tg.pack(side="left")
+                ctk.CTkButton(fila_tg, text="Configurar bot  →", command=app.dialogo_telegram, width=120, height=24,
+                              fg_color="transparent", hover_color="#F1EEE6", text_color=TINTA,
+                              font=(CUERPO_SB, 11)).pack(side="right")
             linea(card, padx=18)
             rotulo(card, "Por qué", PETROLEO, 9).pack(fill="x", padx=18, pady=(8, 0))
             ctk.CTkLabel(card, text=app.datos.por_que[c["id"]], font=(CUERPO, 11), text_color=TEXTO_2, anchor="w",
@@ -1505,6 +1556,13 @@ class PaginaCanales(ctk.CTkScrollableFrame):
         self.refrescar()
 
     def cambiar(self, cid):
+        if cid == "telegram":
+            conf = self.app.telegram
+            if not telegram_bot.configurado(conf):
+                self.app.dialogo_telegram()
+                return
+            conf["activo"] = not self.app.canales["telegram"]
+            telegram_bot.guardar(conf)
         self.app.canales[cid] = not self.app.canales[cid]
         self.refrescar()
         self.app.canales_actualizados()
@@ -1516,7 +1574,10 @@ class PaginaCanales(ctk.CTkScrollableFrame):
             on = self.app.canales[c["id"]]
             self.estados[c["id"]].configure(text="● ACTIVO" if on else "○ INACTIVO",
                                             text_color=PETROLEO if on else TEXTO_2)
-            if on:
+            if c["id"] == "telegram" and not telegram_bot.configurado(self.app.telegram):
+                self.switches[c["id"]].configure(text="Configurar", fg_color="transparent", hover_color="#EFEBE1",
+                                                 border_color=COBRE, text_color=COBRE)
+            elif on:
                 self.switches[c["id"]].configure(text="✓  Conectado", fg_color=PETROLEO, hover_color="#24554F",
                                                  border_color=PETROLEO, text_color="white")
             else:
@@ -1532,25 +1593,41 @@ class PaginaCanales(ctk.CTkScrollableFrame):
                                                                                           "pausada",))
         self.resumen.configure(text=f"{activos} de {len(CANALES)} canales activos  ·  {n_act} de {len(REGLAS)} reglas "
                                     "en funcionamiento")
+        tg = self.app.telegram
+        self.lbl_tg.configure(text=(f"@{tg.get('bot', '')} → {tg.get('chat_nombre', '')}" if
+                                    telegram_bot.configurado(tg) else "Sin configurar"))
 
 
 # ---------------------------------------------------------------- ventana principal
+ICONOS = {"inicio": "\uE80F", "analisis": "\uE9D2", "ia": "\uE715", "voz": "\uE90A", "modelo": "\uE99A",
+          "canales": "\uE71B"}
+ICONOS_FUENTE = "Segoe MDL2 Assets"
+
+
 class ItemMenu(ctk.CTkFrame):
-    def __init__(self, padre, texto, comando):
-        super().__init__(padre, fg_color=TINTA, corner_radius=0, height=44)
+    """Ícono de la barra lateral angosta, con el nombre del módulo al pasar el mouse."""
+
+    def __init__(self, padre, app, icono, texto, comando):
+        super().__init__(padre, fg_color=TINTA, corner_radius=0, height=52)
+        self.app, self.texto = app, texto
         self.indicador = ctk.CTkFrame(self, width=3, height=1, fg_color=TINTA, corner_radius=0)
         self.indicador.pack(side="left", fill="y")
-        self.badge = ctk.CTkLabel(self, text="", font=(CUERPO_SB, 10), fg_color=COBRE, text_color="white",
-                                  corner_radius=9, width=24, height=18)
-        self.boton = ctk.CTkButton(self, text=f"     {texto}", anchor="w", height=44, corner_radius=0,
-                                   font=(DISPLAY, 14), fg_color="transparent", hover_color=TINTA_2,
-                                   text_color="#8FA3B8", command=comando)
-        self.boton.pack(side="left", fill="both", expand=True)
+        self.boton = ctk.CTkButton(self, text=icono, width=58, height=48, corner_radius=8, font=(ICONOS_FUENTE, 19),
+                                   fg_color="transparent", hover_color=TINTA_2, text_color="#8FA3B8", command=comando)
+        self.boton.pack(side="left", padx=(5, 6), pady=2)
+        self.badge = ctk.CTkLabel(self, text="", font=(CUERPO_SB, 9), fg_color=COBRE, text_color="white",
+                                  corner_radius=8, width=18, height=16)
+        self.boton.bind("<Enter>", self._mostrar, add="+")
+        self.boton.bind("<Leave>", lambda e: app.ocultar_tip(), add="+")
+
+    def _mostrar(self, _):
+        y = self.winfo_rooty() - self.app.winfo_rooty() + self.winfo_height() // 2
+        self.app.mostrar_tip(self.texto, y)
 
     def set_badge(self, n):
         if n:
             self.badge.configure(text=str(n))
-            self.badge.place(relx=1.0, rely=0.5, x=-22, anchor="e")
+            self.badge.place(x=44, y=6)
             self.badge.lift()
         else:
             self.badge.place_forget()
@@ -1574,6 +1651,8 @@ class App(ctk.CTk):
         self.minsize(1240, 760)
         self.configure(fg_color=PAPEL)
         self.canales = {c["id"]: c["activo"] for c in CANALES}
+        self.telegram = telegram_bot.cargar()   # token y chat guardados solo en este PC
+        self.canales["telegram"] = telegram_bot.configurado(self.telegram) and self.telegram.get("activo", True)
         self.paginas, self.items = {}, {}
         try:
             self.iconbitmap(recurso("icono.ico"))
@@ -1584,56 +1663,32 @@ class App(ctk.CTk):
         except Exception:
             pass
 
-        self.lateral = ctk.CTkFrame(self, width=240, corner_radius=0, fg_color=TINTA)
+        self.lateral = ctk.CTkFrame(self, width=72, corner_radius=0, fg_color=TINTA)
         self.lateral.pack(side="left", fill="y")
         self.lateral.pack_propagate(False)
         derecha = ctk.CTkFrame(self, fg_color=PAPEL, corner_radius=0)
         derecha.pack(side="left", fill="both", expand=True)
 
-        marca = ctk.CTkFrame(self.lateral, fg_color="transparent")
-        marca.pack(fill="x", padx=24, pady=(26, 4))
-        ctk.CTkFrame(marca, width=6, height=30, fg_color=COBRE, corner_radius=0).pack(side="left")
-        ctk.CTkLabel(marca, text="PULSO", font=(DISPLAY_SB, 26), text_color="white").pack(side="left", padx=(10, 0))
-        ctk.CTkLabel(self.lateral, text="Operaciones digitales", font=(CUERPO, 11), text_color="#7F93A8",
-                     anchor="w").pack(fill="x", padx=24)
-
-        espacio = ctk.CTkFrame(self.lateral, fg_color=TINTA_2, corner_radius=4)
-        espacio.pack(fill="x", padx=16, pady=(22, 18))
-        ctk.CTkLabel(espacio, text="O", font=(DISPLAY_SB, 14), width=30, height=30, corner_radius=4,
-                     fg_color=COBRE, text_color="white").pack(side="left", padx=10, pady=10)
-        txt = ctk.CTkFrame(espacio, fg_color="transparent")
-        txt.pack(side="left", fill="x")
-        ctk.CTkLabel(txt, text=ESPACIO, font=(CUERPO_SB, 12), text_color="white", anchor="w").pack(fill="x")
-        ctk.CTkLabel(txt, text="Marketplace · Brasil", font=(CUERPO, 10), text_color="#8FA3B8", anchor="w").pack(
-            fill="x")
-
-        self.menu_op = self._grupo("Operación")
-        self.menu_cfg = self._grupo("Configuración")
+        ctk.CTkLabel(self.lateral, text="P", font=(DISPLAY_SB, 20), width=38, height=38, corner_radius=8,
+                     fg_color=COBRE, text_color="white").pack(pady=(20, 22))
+        self.menu_op = ctk.CTkFrame(self.lateral, fg_color="transparent")
+        self.menu_op.pack(fill="x")
+        ctk.CTkFrame(self.lateral, height=1, fg_color="#22405C", corner_radius=0).pack(fill="x", padx=18, pady=12)
+        self.menu_cfg = ctk.CTkFrame(self.lateral, fg_color="transparent")
+        self.menu_cfg.pack(fill="x")
 
         pie = ctk.CTkFrame(self.lateral, fg_color="transparent")
-        pie.pack(side="bottom", fill="x", padx=24, pady=(0, 48))
-        ctk.CTkFrame(pie, height=1, fg_color="#22405C", corner_radius=0).pack(fill="x", pady=(0, 12))
-        ctk.CTkLabel(pie, text=f"PULSO {VERSION}\nDatos: Olist · Kaggle", font=(CUERPO, 10),
-                     text_color="#7F93A8", justify="left", anchor="w").pack(fill="x")
-        self.btn_buscar = ctk.CTkButton(pie, text="Buscar actualizaciones", anchor="w", height=26, width=180,
-                                        fg_color="transparent", hover_color=TINTA_2, text_color="#9FB0C2",
-                                        font=(CUERPO_SB, 10), command=lambda: self.buscar_actualizacion(True))
-        self.btn_buscar.pack(fill="x", pady=(8, 0))
-
-        top = ctk.CTkFrame(derecha, fg_color=BLANCO, corner_radius=0, height=52)
-        top.pack(fill="x")
-        top.pack_propagate(False)
-        ctk.CTkLabel(top, text=ESPACIO, font=(CUERPO, 12), text_color=TEXTO_2).pack(side="left", padx=(32, 6))
-        ctk.CTkLabel(top, text="/", font=(CUERPO, 12), text_color=LINEA).pack(side="left")
-        self.lbl_ruta = ctk.CTkLabel(top, text="", font=(CUERPO_SB, 12), text_color=TINTA)
-        self.lbl_ruta.pack(side="left", padx=6)
-        ctk.CTkLabel(top, text="OP", font=(DISPLAY_SB, 12), width=32, height=32, corner_radius=16, fg_color=TINTA,
-                     text_color="white").pack(side="right", padx=(10, 32))
-        ctk.CTkLabel(top, text="Equipo Operaciones", font=(CUERPO_SB, 12), text_color=TEXTO).pack(side="right")
-        ctk.CTkFrame(top, width=1, height=24, fg_color=LINEA, corner_radius=0).pack(side="right", padx=16)
-        self.lbl_estado = ctk.CTkLabel(top, text="Cargando…", font=(CUERPO, 11), text_color=TEXTO_2)
-        self.lbl_estado.pack(side="right")
-        ctk.CTkFrame(derecha, height=1, fg_color=LINEA, corner_radius=0).pack(fill="x")
+        pie.pack(side="bottom", fill="x", pady=(0, 40))
+        self.btn_buscar = ctk.CTkButton(pie, text="\uE895", width=44, height=40, corner_radius=8,
+                                        font=(ICONOS_FUENTE, 15), fg_color="transparent", hover_color=TINTA_2,
+                                        text_color="#8FA3B8", command=lambda: self.buscar_actualizacion(True))
+        self.btn_buscar.pack()
+        self.btn_buscar.bind("<Enter>", lambda e: self.mostrar_tip(
+            "Buscar actualizaciones", self.btn_buscar.winfo_rooty() - self.winfo_rooty() + 20), add="+")
+        self.btn_buscar.bind("<Leave>", lambda e: self.ocultar_tip(), add="+")
+        ctk.CTkLabel(pie, text=f"v{VERSION}", font=(CUERPO, 10), text_color="#5F7590").pack(pady=(2, 0))
+        self.tip = ctk.CTkLabel(self, text="", font=(CUERPO_SB, 12), fg_color=TINTA_2, text_color="white",
+                                corner_radius=6, height=30)
 
         # Aviso de versión nueva (oculto hasta que el actualizador encuentre una)
         self.aviso = ctk.CTkFrame(derecha, fg_color="#FBEDE7", corner_radius=0, height=44)
@@ -1659,13 +1714,6 @@ class App(ctk.CTk):
         barra.start()
         self.after(200, self.iniciar)
 
-    def _grupo(self, titulo):
-        ctk.CTkLabel(self.lateral, text=titulo.upper(), font=(CUERPO_SB, 9), text_color="#5F7590", anchor="w").pack(
-            fill="x", padx=24, pady=(10, 4))
-        f = ctk.CTkFrame(self.lateral, fg_color="transparent")
-        f.pack(fill="x")
-        return f
-
     def iniciar(self):
         try:
             self.datos = Datos()
@@ -1675,7 +1723,6 @@ class App(ctk.CTk):
             return
         estilo_tablas()
         self.cargando.destroy()
-        self.lbl_estado.configure(text=f"●  Sincronizado · datos al {self.datos.corte:%d-%m-%Y}", text_color=PETROLEO)
         # La bandeja se crea primero para que Inicio muestre sus alertas
         self.paginas["ia"] = PaginaIA(self.contenido, self)
         self.paginas["inicio"] = PaginaInicio(self.contenido, self)
@@ -1685,18 +1732,175 @@ class App(ctk.CTk):
         self.paginas["canales"] = PaginaCanales(self.contenido, self)
         for clave, grupo in (("inicio", self.menu_op), ("analisis", self.menu_op), ("ia", self.menu_op),
                              ("voz", self.menu_op), ("modelo", self.menu_cfg), ("canales", self.menu_cfg)):
-            item = ItemMenu(grupo, self.TITULOS[clave], lambda c=clave: self.ir(c))
+            item = ItemMenu(grupo, self, ICONOS[clave], self.TITULOS[clave], lambda c=clave: self.ir(c))
             item.pack(fill="x")
             self.items[clave] = item
-        self.paginas["ia"].procesar()
+        self.paginas["ia"].procesar(avisar=False)   # lote inicial de muestra: no envía avisos
         inicial = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in self.paginas else "inicio"
         self.ir(inicial)
         self.after(1500, lambda: self.buscar_actualizacion(False))
 
+    def mostrar_tip(self, texto, y):
+        self.tip.configure(text=f"   {texto}   ")
+        self.tip.place(x=78, y=y, anchor="w")
+        self.tip.lift()
+
+    def ocultar_tip(self):
+        self.tip.place_forget()
+
+    # --- Telegram: configuración del bot y envío de avisos
+    def dialogo_telegram(self):
+        conf = dict(self.telegram)
+        dlg = ctk.CTkToplevel(self)
+        dlg.title("Configurar Telegram")
+        dlg.geometry("600x620")
+        dlg.resizable(False, False)
+        dlg.configure(fg_color=BLANCO)
+        dlg.transient(self)
+        dlg.after(100, dlg.grab_set)
+        ctk.CTkLabel(dlg, text="Avisos por Telegram", font=(DISPLAY_SB, 24), text_color=TINTA, anchor="w").pack(
+            fill="x", padx=28, pady=(22, 0))
+        ctk.CTkLabel(dlg, text="PULSO te escribe al celular cada vez que entra un ticket crítico.", font=(CUERPO, 12),
+                     text_color=TEXTO_2, anchor="w").pack(fill="x", padx=28, pady=(0, 10))
+
+        def paso(n, titulo, texto):
+            f = ctk.CTkFrame(dlg, fg_color="transparent")
+            f.pack(fill="x", padx=28, pady=(12, 0))
+            ctk.CTkLabel(f, text=f"{n}", font=(DISPLAY_SB, 22), text_color=COBRE, width=28, anchor="nw").pack(
+                side="left", anchor="n")
+            cuerpo = ctk.CTkFrame(f, fg_color="transparent")
+            cuerpo.pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(cuerpo, text=titulo, font=(CUERPO_SB, 13), text_color=TEXTO, anchor="w").pack(fill="x")
+            ctk.CTkLabel(cuerpo, text=texto, font=(CUERPO, 12), text_color=TEXTO_2, anchor="w", justify="left",
+                         wraplength=500).pack(fill="x")
+            return cuerpo
+
+        c1 = paso(1, "Crea el bot y pega su token",
+                  "En Telegram, escribe a @BotFather, envía /newbot y sigue las instrucciones. Te dará un token.")
+        fila1 = ctk.CTkFrame(c1, fg_color="transparent")
+        fila1.pack(fill="x", pady=(6, 0))
+        token = ctk.CTkEntry(fila1, show="•", placeholder_text="123456789:AA…", corner_radius=3, height=32,
+                             border_color=LINEA, fg_color=CAMPO, font=(CUERPO, 12))
+        token.pack(side="left", fill="x", expand=True)
+        if conf.get("token"):
+            token.insert(0, conf["token"])
+        b_ver = boton(fila1, "Verificar", lambda: verificar(), principal=False, width=90, height=32)
+        b_ver.pack(side="left", padx=(8, 0))
+        r1 = ctk.CTkLabel(c1, text=f"✓ Bot @{conf['bot']}" if conf.get("bot") else "", font=(CUERPO_SB, 11),
+                          text_color=PETROLEO, anchor="w")
+        r1.pack(fill="x")
+
+        c2 = paso(2, "Escríbele a tu bot",
+                  "Abre el bot en Telegram y envíale /start. Después aprieta «Detectar chat».")
+        fila2 = ctk.CTkFrame(c2, fg_color="transparent")
+        fila2.pack(fill="x", pady=(6, 0))
+        boton(fila2, "Abrir el bot", lambda: conf.get("bot") and webbrowser.open(f"https://t.me/{conf['bot']}"),
+              principal=False, width=110, height=32).pack(side="left")
+        boton(fila2, "Detectar chat", lambda: detectar(), principal=False, width=120, height=32).pack(
+            side="left", padx=(8, 0))
+        r2 = ctk.CTkLabel(c2, text=f"✓ Chat: {conf['chat_nombre']}" if conf.get("chat_id") else "",
+                          font=(CUERPO_SB, 11), text_color=PETROLEO, anchor="w")
+        r2.pack(fill="x")
+
+        c3 = paso(3, "Prueba el aviso", "Envía un mensaje de prueba para confirmar que llega a tu celular.")
+        b_prueba = boton(c3, "Enviar mensaje de prueba", lambda: probar(), principal=False, width=190, height=32)
+        b_prueba.pack(anchor="w", pady=(6, 0))
+        r3 = ctk.CTkLabel(c3, text="", font=(CUERPO_SB, 11), text_color=PETROLEO, anchor="w")
+        r3.pack(fill="x")
+
+        estado = ctk.CTkLabel(dlg, text="El token se guarda solo en este computador.", font=(CUERPO, 11),
+                              text_color=TEXTO_2, anchor="w")
+        botones = ctk.CTkFrame(dlg, fg_color="transparent")
+        botones.pack(side="bottom", fill="x", padx=28, pady=18)
+        estado.pack(side="bottom", fill="x", padx=28)
+        boton(botones, "Cancelar", dlg.destroy, principal=False, width=100).pack(side="right", padx=(8, 0))
+        boton(botones, "Guardar", lambda: guardar(), width=110).pack(side="right")
+        if telegram_bot.configurado(conf):
+            ctk.CTkButton(botones, text="Desconectar", command=lambda: desconectar(), fg_color="transparent",
+                          hover_color="#F5E4DD", text_color=COBRE, font=(CUERPO_SB, 12), width=100).pack(side="left")
+
+        def en_hilo(fn, ok, etiqueta):
+            def tarea():
+                try:
+                    res = fn()
+                except telegram_bot.ErrorTelegram as e:
+                    msg = str(e)
+                    self.after(0, lambda: etiqueta.configure(text=msg, text_color=COBRE))
+                    return
+                self.after(0, lambda: ok(res))
+            threading.Thread(target=tarea, daemon=True).start()
+
+        def verificar():
+            conf["token"] = token.get().strip()
+            r1.configure(text="Verificando…", text_color=TEXTO_2)
+
+            def ok(bot):
+                conf["bot"] = bot
+                r1.configure(text=f"✓ Bot @{bot}", text_color=PETROLEO)
+            en_hilo(lambda: telegram_bot.verificar_token(conf["token"]), ok, r1)
+
+        def detectar():
+            if not conf.get("bot"):
+                r2.configure(text="Primero verifica el token (paso 1).", text_color=COBRE)
+                return
+            r2.configure(text="Buscando tu mensaje…", text_color=TEXTO_2)
+
+            def ok(res):
+                if not res:
+                    r2.configure(text="No hay mensajes: envía /start al bot y vuelve a intentar.", text_color=COBRE)
+                    return
+                conf["chat_id"], conf["chat_nombre"] = res
+                r2.configure(text=f"✓ Chat: {res[1]}", text_color=PETROLEO)
+            en_hilo(lambda: telegram_bot.detectar_chat(conf["token"]), ok, r2)
+
+        def probar():
+            if not telegram_bot.configurado(conf):
+                r3.configure(text="Completa los pasos 1 y 2.", text_color=COBRE)
+                return
+            r3.configure(text="Enviando…", text_color=TEXTO_2)
+            en_hilo(lambda: telegram_bot.enviar(conf["token"], conf["chat_id"],
+                                                "✅ <b>PULSO conectado.</b>\nDesde ahora te aviso aquí cada ticket "
+                                                "crítico de la Bandeja IA."),
+                    lambda _: r3.configure(text="✓ Mensaje enviado: revisa Telegram.", text_color=PETROLEO), r3)
+
+        def guardar():
+            if not telegram_bot.configurado(conf):
+                estado.configure(text="Completa los pasos 1 y 2 antes de guardar.", text_color=COBRE)
+                return
+            conf["activo"] = True
+            telegram_bot.guardar(conf)
+            self.telegram = conf
+            self.canales["telegram"] = True
+            self.paginas["canales"].refrescar()
+            dlg.destroy()
+
+        def desconectar():
+            telegram_bot.guardar({})
+            self.telegram = {}
+            self.canales["telegram"] = False
+            self.paginas["canales"].refrescar()
+            dlg.destroy()
+
+    def avisar_telegram(self, tickets, al_terminar=None):
+        """Envía en segundo plano los tickets críticos a Telegram, si el canal está activo."""
+        if not (self.canales.get("telegram") and telegram_bot.configurado(self.telegram)):
+            return
+        conf = dict(self.telegram)
+
+        def tarea():
+            try:
+                n, error = telegram_bot.avisar_criticos(conf, tickets), None
+            except telegram_bot.ErrorTelegram as e:
+                n, error = 0, str(e)
+            if al_terminar:
+                self.after(0, lambda: al_terminar(n, error))
+
+        threading.Thread(target=tarea, daemon=True).start()
+
     # --- actualización automática desde GitHub
     def buscar_actualizacion(self, manual):
         if manual:
-            self.btn_buscar.configure(text="Buscando…", state="disabled")
+            self.btn_buscar.configure(state="disabled")
 
         def tarea():
             try:
@@ -1708,7 +1912,7 @@ class App(ctk.CTk):
         threading.Thread(target=tarea, daemon=True).start()
 
     def _resultado_busqueda(self, info, error, manual):
-        self.btn_buscar.configure(text="Buscar actualizaciones", state="normal")
+        self.btn_buscar.configure(state="normal")
         if info:
             self.nueva_version = info
             self.lbl_aviso.configure(text=f"PULSO {info['version']} está disponible  ·  tienes la {VERSION}")
@@ -1802,8 +2006,7 @@ class App(ctk.CTk):
             p.pack_forget()
         for c, it in self.items.items():
             it.activar(c == clave)
-        self.paginas[clave].pack(fill="both", expand=True)
-        self.lbl_ruta.configure(text=self.TITULOS[clave])
+        self.paginas[clave].pack(fill="both", expand=True, padx=14, pady=14)
         if procesar:
             self.paginas["ia"].procesar()
         if region or categoria:
@@ -1818,8 +2021,6 @@ class App(ctk.CTk):
             self.paginas["inicio"].pintar_alertas()
 
     def canales_actualizados(self):
-        if "inicio" in self.paginas:
-            self.paginas["inicio"].pintar_canales()
         ia = self.paginas["ia"]
         if not ia.resultados.empty:   # re-clasifica la bandeja actual con los canales vigentes
             res = ia.clasificar(ia.resultados.mensaje.tolist())
