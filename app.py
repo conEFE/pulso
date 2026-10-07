@@ -1791,11 +1791,15 @@ class App(ctk.CTk):
         r1.pack(fill="x")
 
         c2 = paso(2, "Escríbele a tu bot",
-                  "Abre el bot en Telegram y envíale /start. Después aprieta «Detectar chat».")
+                  "Busca tu bot en Telegram (en el celular o en Telegram Web) y aprieta «Iniciar». Después aprieta "
+                  "«Detectar chat».")
         fila2 = ctk.CTkFrame(c2, fg_color="transparent")
         fila2.pack(fill="x", pady=(6, 0))
-        boton(fila2, "Abrir el bot", lambda: conf.get("bot") and webbrowser.open(f"https://t.me/{conf['bot']}"),
-              principal=False, width=110, height=32).pack(side="left")
+        boton(fila2, "Abrir en la app", lambda: conf.get("bot") and webbrowser.open(f"https://t.me/{conf['bot']}"),
+              principal=False, width=120, height=32).pack(side="left")
+        boton(fila2, "Telegram Web", lambda: conf.get("bot") and webbrowser.open(
+            f"https://web.telegram.org/k/#@{conf['bot']}"), principal=False, width=120, height=32).pack(
+            side="left", padx=(8, 0))
         boton(fila2, "Detectar chat", lambda: detectar(), principal=False, width=120, height=32).pack(
             side="left", padx=(8, 0))
         r2 = ctk.CTkLabel(c2, text=f"✓ Chat: {conf['chat_nombre']}" if conf.get("chat_id") else "",
