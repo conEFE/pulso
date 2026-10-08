@@ -39,7 +39,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 APP_NOMBRE = "PULSO"
-VERSION = "1.5.0"
+VERSION = "1.5.1"
 ESPACIO = "Olist Store"
 
 # ---------------------------------------------------------------- identidad visual
@@ -572,7 +572,7 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         vend = reciente.groupby("vendedor").agg(n=("atrasado", "size"), atraso=("atrasado", "mean"))
         vend_mal = int(((vend.n >= 10) & (vend.atraso > 0.10)).sum())
         self.lista_alertas = [
-            ("bandeja", COBRE, "", "", "Abrir", lambda: app.ir("ia")),
+            ("bandeja", COBRE, "", "", "Abrir", lambda: app.ir("ia", urgentes=True)),
             ("reg", COBRE, f"Atrasos altos en el {reg.index[0]}",
              f"{pct(reg.iloc[0])} de los pedidos de los últimos 3 meses llegó tarde (promedio "
              f"{pct(reciente.atrasado.mean())}).", "Ver", lambda: app.ir("analisis", region=reg.index[0])),
@@ -620,9 +620,18 @@ class PaginaInicio(ctk.CTkScrollableFrame):
             if clave == "bandeja":
                 if res.empty:
                     continue
-                alta = int((res.prioridad == "Alta").sum())
-                titulo = f"{alta} reclamos urgentes en la bandeja"
-                detalle = f"De {len(res)} mensajes nuevos clasificados por la IA; responder en menos de 2 horas."
+                ia = self.app.paginas["ia"]
+                urg = res[res.prioridad == "Alta"]
+                if urg.empty:
+                    titulo = "Sin reclamos urgentes en la bandeja"
+                    detalle = f"La IA clasificó {len(res)} mensajes nuevos y ninguno es de prioridad alta."
+                else:
+                    partes = [f"{n} por {t.lower()}" for t, n in urg.tema.value_counts().items()]
+                    motivo = ", ".join(partes[:-1]) + (" y " if len(partes) > 1 else "") + partes[-1]
+                    titulo = (f"{len(urg)} reclamo{'s' if len(urg) != 1 else ''} urgente{'s' if len(urg) != 1 else ''}"
+                              f" en la bandeja: {motivo}")
+                    detalle = (f"De {len(res)} mensajes recibidos a las {ia.recibido:%H:%M}; responder antes de las "
+                               f"{ia.limite:%H:%M}.")
             f = ctk.CTkFrame(self.alertas, fg_color="transparent")
             f.pack(fill="x", pady=7)
             ctk.CTkFrame(f, width=3, height=38, corner_radius=0, fg_color=color).pack(side="left", padx=(0, 14))
@@ -878,12 +887,26 @@ class PaginaIA(ctk.CTkScrollableFrame):
                      text_color=TEXTO_2).pack(side="left", padx=12)
         self.lbl_tg = ctk.CTkLabel(estado, text="", font=(CUERPO_SB, 12), text_color=TEXTO_2)
         self.lbl_tg.pack(side="right")
+        # De dónde viene el lote: se dice explícitamente que es una simulación con reseñas reales
+        self.lbl_lote = ctk.CTkLabel(self, text="", font=(CUERPO, 12), text_color=TEXTO_2, anchor="w")
+        self.lbl_lote.pack(fill="x", padx=36, pady=(0, 8))
 
         self.kpi = FranjaKPI(self, [
             ("proc", "Procesados", TINTA), ("neg", "Negativos", COBRE), ("alta", "Prioridad alta", COBRE),
             ("acierto", "Coincide con nota real", PETROLEO), ("ahorro", "Tiempo ahorrado", TINTA),
         ])
         self.kpi.pack(fill="x", padx=32, pady=(0, 12))
+
+        # Atender primero: solo los urgentes del lote, con su plazo
+        p_urg = panel(self)
+        p_urg.pack(fill="x", padx=32, pady=(0, 10))
+        cab = ctk.CTkFrame(p_urg, fg_color="transparent")
+        cab.pack(fill="x", padx=4, pady=(6, 4))
+        ctk.CTkLabel(cab, text="Atender primero", font=(DISPLAY_SB, 15), text_color=TINTA).pack(side="left")
+        self.lbl_urg = ctk.CTkLabel(cab, text="", font=(CUERPO_SB, 12), text_color=COBRE)
+        self.lbl_urg.pack(side="left", padx=(12, 0), pady=(2, 0))
+        self.lista_urg = ctk.CTkFrame(p_urg, fg_color="transparent")
+        self.lista_urg.pack(fill="x", padx=4)
 
         cuerpo = ctk.CTkFrame(self, fg_color="transparent")
         cuerpo.pack(fill="x", padx=32, pady=(0, 30))
@@ -1020,7 +1043,12 @@ class PaginaIA(ctk.CTkScrollableFrame):
         res["sentimiento_real"] = muestra.sentimiento.values
         res["fecha_resena"] = muestra.fecha.values
         self.resultados = res
+        self.recibido = dt.datetime.now()
+        self.limite = self.recibido + dt.timedelta(hours=2)   # plazo de los urgentes
+        self.lbl_lote.configure(text=f"{n} mensajes recibidos hoy a las {self.recibido:%H:%M}  ·  simulación con "
+                                     "reseñas reales de clientes que la IA no vio al entrenar")
         self.pintar_tabla()
+        self.pintar_urgentes()
 
         manual_min = n * 3  # supuesto: 3 minutos por mensaje leído, clasificado y respondido a mano
         self.kpi.set("proc", num(n), f"en {num(seg, 2)} segundos")
@@ -1034,6 +1062,51 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.app.bandeja_actualizada(alta)
         if avisar:
             self.app.avisar_telegram(res.to_dict("records"), self.aviso_telegram)
+
+    def pintar_urgentes(self, maximo=6):
+        for w in self.lista_urg.winfo_children():
+            w.destroy()
+        res = self.resultados
+        urg = res[res.prioridad == "Alta"] if not res.empty else res
+        if urg.empty:
+            self.lbl_urg.configure(text="")
+            ctk.CTkLabel(self.lista_urg, text="Sin reclamos urgentes en este lote.", font=(CUERPO, 12),
+                         text_color=TEXTO_2, anchor="w").pack(fill="x", pady=(0, 8))
+            return
+        self.lbl_urg.configure(text=f"{len(urg)} reclamo{'s' if len(urg) != 1 else ''} urgente"
+                                    f"{'s' if len(urg) != 1 else ''}  ·  responder antes de las {self.limite:%H:%M}")
+        for i, r in urg.head(maximo).iterrows():
+            f = ctk.CTkFrame(self.lista_urg, fg_color="transparent")
+            f.pack(fill="x", pady=4)
+            ctk.CTkFrame(f, width=3, height=36, corner_radius=0, fg_color=COBRE).pack(side="left", padx=(0, 12))
+            ctk.CTkLabel(f, text=r.ticket, font=(CUERPO_SB, 12), text_color=TEXTO, width=120, anchor="w").pack(
+                side="left")
+            ctk.CTkLabel(f, text=f"{r.tema}  ·  {r.area}  ·  {r.canal}", font=(CUERPO_SB, 12), text_color=TINTA,
+                         width=380, anchor="w").pack(side="left")
+            texto = r.mensaje if len(r.mensaje) <= 70 else r.mensaje[:70] + "…"
+            ctk.CTkButton(f, text="Ver  →", command=lambda k=i: self.seleccionar(k), width=64, height=28,
+                          fg_color="transparent", hover_color="#F1EEE6", text_color=TINTA,
+                          font=(CUERPO_SB, 12)).pack(side="right")
+            ctk.CTkLabel(f, text=f"antes de las {self.limite:%H:%M}", font=(CUERPO_SB, 12), text_color=COBRE).pack(
+                side="right", padx=(12, 8))
+            ctk.CTkLabel(f, text=f"«{texto}»", font=(CUERPO, 12), text_color=TEXTO_2, anchor="w").pack(
+                side="left", fill="x", expand=True)
+        if len(urg) > maximo:
+            ctk.CTkButton(self.lista_urg, text=f"y {len(urg) - maximo} más: ver todos los urgentes  →",
+                          command=self.ver_urgentes, fg_color="transparent", hover_color="#F1EEE6",
+                          text_color=TINTA, font=(CUERPO_SB, 12), anchor="w", height=26).pack(anchor="w")
+
+    def seleccionar(self, i):
+        """Abre la ficha de un ticket de la bandeja y lo marca en la tabla."""
+        if str(i) not in self.tabla.get_children():
+            self.filtro.set("Todos")
+            self.pintar_tabla()
+        self.tabla.selection_set(str(i))
+        self.tabla.see(str(i))
+
+    def ver_urgentes(self):
+        self.filtro.set("Alta")
+        self.pintar_tabla()
 
     def pintar_tabla(self):
         self.tabla.delete(*self.tabla.get_children())
@@ -2005,7 +2078,7 @@ class App(ctk.CTk):
             actualizador.instalar(ruta)
             self.after(800, self.destroy)
 
-    def ir(self, clave, procesar=False, exportar=False, region=None, categoria=None):
+    def ir(self, clave, procesar=False, exportar=False, region=None, categoria=None, urgentes=False):
         for c, p in self.paginas.items():
             p.pack_forget()
         for c, it in self.items.items():
@@ -2013,6 +2086,8 @@ class App(ctk.CTk):
         self.paginas[clave].pack(fill="both", expand=True, padx=14, pady=14)
         if procesar:
             self.paginas["ia"].procesar()
+        if urgentes:
+            self.paginas["ia"].ver_urgentes()
         if region or categoria:
             self.paginas["analisis"].aplicar(region, categoria)
         if exportar:
@@ -2032,6 +2107,7 @@ class App(ctk.CTk):
                 res[col] = ia.resultados[col].values
             ia.resultados = res
             ia.pintar_tabla()
+            ia.pintar_urgentes()
             self.bandeja_actualizada(int((res.prioridad == "Alta").sum()))
 
 
