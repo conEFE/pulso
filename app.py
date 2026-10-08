@@ -40,7 +40,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 APP_NOMBRE = "PULSO"
-VERSION = "1.6.1"
+VERSION = "1.6.2"
 ESPACIO = "Olist Store"
 
 # ---------------------------------------------------------------- identidad visual

@@ -12,7 +12,8 @@ import re
 import subprocess
 import sys
 import tempfile
-import urllib.request
+
+import red
 
 REPO = "conEFE/pulso"
 API = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -32,9 +33,10 @@ def es_instalado():
 
 def buscar(version_actual, timeout=6):
     """Devuelve los datos del último Release si es más nuevo; None si no hay versión nueva."""
-    req = urllib.request.Request(API, headers=CABECERAS)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        rel = json.load(r)
+    codigo, contenido = red.peticion(API, cabeceras=CABECERAS, timeout=timeout)   # proxy y certificados de Windows
+    if codigo != 200:
+        raise red.ErrorRed(f"GitHub respondió con el código {codigo}.")
+    rel = json.loads(contenido)
     nueva = rel.get("tag_name", "")
     if version_tupla(nueva) <= version_tupla(version_actual):
         return None
@@ -59,26 +61,17 @@ def descargar(instalador, progreso=None, cancelado=lambda: False):
     if not url.startswith(f"https://github.com/{REPO}/releases/download/"):
         raise ValueError("El instalador no proviene del repositorio oficial de PULSO.")
     destino = os.path.join(tempfile.gettempdir(), instalador["nombre"])
-    h, leido, total = hashlib.sha256(), 0, instalador["tamano"]
-    req = urllib.request.Request(url, headers={"User-Agent": CABECERAS["User-Agent"]})
-    with urllib.request.urlopen(req, timeout=30) as r, open(destino, "wb") as f:
-        while True:
-            if cancelado():
-                raise InterruptedError("Descarga cancelada.")
-            bloque = r.read(1 << 16)
-            if not bloque:
-                break
-            f.write(bloque)
-            h.update(bloque)
-            leido += len(bloque)
-            if progreso:
-                progreso(leido, total)
-    if leido != total:
-        os.remove(destino)
+    total = instalador["tamano"]
+    codigo, contenido = red.peticion(url, timeout=60, cancelado=cancelado,
+                                     progreso=(lambda leido: progreso(leido, total)) if progreso else None)
+    if codigo != 200:
+        raise IOError(f"GitHub respondió con el código {codigo} al descargar.")
+    if len(contenido) != total:
         raise IOError("La descarga quedó incompleta.")
-    if instalador["sha256"] and h.hexdigest() != instalador["sha256"]:
-        os.remove(destino)
+    if instalador["sha256"] and hashlib.sha256(contenido).hexdigest() != instalador["sha256"]:
         raise IOError("La huella SHA-256 no coincide con la publicada en GitHub: el archivo no se instalará.")
+    with open(destino, "wb") as f:
+        f.write(contenido)
     return destino
 
 

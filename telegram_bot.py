@@ -11,9 +11,9 @@ El token es un secreto: se guarda solo en este PC (%APPDATA%\\PULSO\\config.json
 import html
 import json
 import os
-import urllib.error
 import urllib.parse
-import urllib.request
+
+import red
 
 API = "https://api.telegram.org/bot{token}/{metodo}"
 CARPETA = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "PULSO")
@@ -57,38 +57,21 @@ def _llamar(token, metodo, datos=None, timeout=10):
     url = API.format(token=urllib.parse.quote(token.strip(), safe=":"), metodo=metodo)
     cuerpo = urllib.parse.urlencode(datos).encode() if datos else None
     try:
-        with urllib.request.urlopen(urllib.request.Request(url, data=cuerpo), timeout=timeout) as r:
-            resp = json.load(r)
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            raise ErrorTelegram("Telegram rechazó el token. Revisa que esté completo.") from None
-        if e.code == 400:
-            raise ErrorTelegram("Telegram no encontró el chat. Envía /start a tu bot y vuelve a detectarlo.") from None
-        raise ErrorTelegram(f"Telegram respondió con un error ({e.code}).") from None
-    except urllib.error.URLError as e:
-        raise ErrorTelegram(explicar_error_red(getattr(e, "reason", e))) from None
-    except (TimeoutError, OSError) as e:
-        raise ErrorTelegram(explicar_error_red(e)) from None
-    if not resp.get("ok"):
-        raise ErrorTelegram(resp.get("description", "Telegram respondió con un error."))
+        # red.peticion usa el sistema de red de Windows (proxy y certificados del equipo, como el navegador)
+        codigo, contenido = red.peticion(url, datos=cuerpo, timeout=timeout)
+    except red.ErrorRed as e:
+        raise ErrorTelegram(f"Telegram: {e}") from None
+    if codigo == 401:
+        raise ErrorTelegram("Telegram rechazó el token. Revisa que esté completo.")
+    if codigo == 400:
+        raise ErrorTelegram("Telegram no encontró el chat. Envía /start a tu bot y vuelve a detectarlo.")
+    try:
+        resp = json.loads(contenido)
+    except ValueError:
+        raise ErrorTelegram(f"Telegram respondió con un error ({codigo}).") from None
+    if codigo != 200 or not resp.get("ok"):
+        raise ErrorTelegram(resp.get("description", f"Telegram respondió con un error ({codigo})."))
     return resp["result"]
-
-
-def explicar_error_red(motivo):
-    """Traduce el error de conexión a una causa concreta, para que el usuario sepa qué revisar."""
-    t = str(motivo)
-    if "CERTIFICATE_VERIFY_FAILED" in t or "SSL" in t:
-        causa = ("La conexión segura con Telegram fue interceptada. Suele pasar en redes de empresa o de "
-                 "universidad que inspeccionan el tráfico, o si la fecha y hora del PC están mal.")
-    elif "getaddrinfo" in t or "11001" in t or "11004" in t:
-        causa = "Este PC no encuentra los servidores de Telegram: no hay internet o la red bloquea Telegram."
-    elif "timed out" in t or "10060" in t or isinstance(motivo, TimeoutError):
-        causa = "Telegram no respondió a tiempo: la red o un firewall podría estar bloqueándolo."
-    elif "10061" in t or "10013" in t or "refused" in t.lower():
-        causa = "La red, un firewall o el antivirus rechazó la conexión con Telegram."
-    else:
-        causa = "No se pudo conectar con Telegram."
-    return f"{causa} (Detalle técnico: {t[:120]})"
 
 
 def verificar_token(token):
