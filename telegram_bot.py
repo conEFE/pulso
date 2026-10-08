@@ -114,3 +114,35 @@ def avisar_criticos(conf, tickets):
     if resto > 0:
         enviar(conf["token"], conf["chat_id"], f"… y {resto} tickets críticos más en la Bandeja IA de PULSO.")
     return len(criticos)
+
+
+def mensaje_resumen(periodo, kpis, alertas):
+    """kpis: [(nombre, valor, variación)]; alertas: [(título, detalle)]."""
+    lineas = [f"📊 <b>PULSO · Resumen del mes</b> ({html.escape(periodo)})", ""]
+    lineas += [f"<b>{html.escape(n)}:</b> {html.escape(v)}  <i>{html.escape(var)}</i>" for n, v, var in kpis]
+    if alertas:
+        lineas += ["", "<b>Requiere atención</b>"]
+        lineas += [f"• {html.escape(t)}" for t, _ in alertas]
+    return "\n".join(lineas)
+
+
+def mensaje_vendedores(filas, en_riesgo, total, promedio):
+    """filas: [(código, reseñas, % negativas, motivo, categoría)] de los vendedores en riesgo con más reclamos."""
+    lineas = [f"⚠️ <b>{en_riesgo} vendedores en riesgo</b> (de {total} con 20+ reseñas)",
+              f"Tienen más del doble de reseñas negativas que el promedio ({promedio}).", ""]
+    if len(filas) < en_riesgo:
+        lineas.insert(2, f"Los {len(filas)} con más reclamos:")
+    for i, (cod, n, neg, motivo, cat) in enumerate(filas, start=1):
+        lineas.append(f"{i}. <b>{html.escape(cod)}</b> · {html.escape(neg)} negativas de {n} · "
+                      f"{html.escape(motivo)} · {html.escape(cat)}")
+    lineas += ["", "Sugerencia: enviarles un plan de mejora desde el Seller Center."]
+    return "\n".join(lineas)
+
+
+def mensaje_por_vencer(t, minutos):
+    msg = t["mensaje"] if len(t["mensaje"]) <= 200 else t["mensaje"][:200] + "…"
+    cuando = (f"venció hace {abs(minutos)} min" if minutos < 0 else f"vence en {minutos} min")
+    return (f"⏰ <b>Ticket urgente sin aprobar: {html.escape(t['ticket'])}</b>\n"
+            f"{cuando} (a las {t['limite']:%H:%M})\n"
+            f"<b>Tema:</b> {html.escape(t['tema'])} · <b>Área:</b> {html.escape(t['area'])}\n\n"
+            f"<i>«{html.escape(msg)}»</i>")

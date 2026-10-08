@@ -42,6 +42,12 @@ bandeja o al probar un mensaje), PULSO lo envía al chat que configures. En *Can
 2. Pega el token en PULSO y aprieta *Verificar*.
 3. Abre tu bot, envíale `/start` y aprieta *Detectar chat*. Luego *Enviar mensaje de prueba* y *Guardar*.
 
+Además del aviso de cada ticket crítico, el bot envía:
+
+- **Resumen del mes** (botón en Inicio): KPIs con su variación y las alertas, en un solo mensaje.
+- **Vendedores en riesgo** (botón en Voz del cliente): los que tienen más del doble de reseñas negativas que el promedio.
+- **Ticket por vencer** (automático mientras PULSO está abierto): un urgente sin aprobar a 30 minutos de su plazo, una sola vez.
+
 El token se guarda solo en ese computador (`%APPDATA%\PULSO\config.json`), nunca en el repositorio. Las demás
 integraciones (WhatsApp, email, CRM, etc.) son simuladas: la app no envía mensajes reales por esos canales.
 

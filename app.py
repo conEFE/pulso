@@ -40,7 +40,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 APP_NOMBRE = "PULSO"
-VERSION = "1.5.1"
+VERSION = "1.6.0"
 ESPACIO = "Olist Store"
 
 # ---------------------------------------------------------------- identidad visual
@@ -502,6 +502,10 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         boton(acciones, "Exportar informe", lambda: app.ir("analisis", exportar=True), principal=False,
               width=150).pack(side="right", padx=(8, 0))
         boton(acciones, "Procesar bandeja", lambda: app.ir("ia", procesar=True), width=150).pack(side="right")
+        boton(acciones, "Resumen a Telegram", self.enviar_resumen, principal=False, width=170).pack(
+            side="right", padx=(0, 8))
+        self.lbl_tg = ctk.CTkLabel(acciones, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2)
+        self.lbl_tg.pack(side="right", padx=(0, 12))
 
         # Banda de KPIs del último mes
         mensual = v.groupby("mes").agg(ventas=("valor", "sum"), pedidos=("valor", "size"), nota=("nota", "mean"),
@@ -512,6 +516,9 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         kpi = FranjaKPI(self, [("ventas", "Ventas", TINTA), ("pedidos", "Pedidos", TINTA),
                                ("nota", "Nota de clientes", PETROLEO), ("atraso", "Entregas atrasadas", COBRE)])
         kpi.pack(fill="x", padx=36, pady=(10, 0))
+        self.periodo = f"{MESES_LARGOS[ultimo.month - 1]} {ultimo.year}"
+        self.kpis_resumen = []
+        nombres = {"ventas": "Ventas", "pedidos": "Pedidos", "nota": "Nota de clientes", "atraso": "Atrasos"}
         for clave, valor, (txt, delta), menos_es_mejor in [
             ("ventas", millones(a.ventas), variacion(a.ventas, b.ventas), False),
             ("pedidos", num(a.pedidos), variacion(a.pedidos, b.pedidos), False),
@@ -520,6 +527,7 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         ]:
             bueno = (delta < 0) if menos_es_mejor else (delta > 0)
             kpi.set(clave, valor, txt.replace("mes anterior", MESES_LARGOS[previo.month - 1]))
+            self.kpis_resumen.append((nombres[clave], valor, txt.replace("mes anterior", MESES_LARGOS[previo.month - 1])))
             kpi.notas[clave].configure(text_color=PETROLEO if bueno else COBRE, font=(CUERPO_SB, 11))
         separador(self, pady=(18, 0))
 
@@ -623,7 +631,12 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         ax3.set_xlabel("días desde la compra", fontsize=8)
         FigureCanvasTkAgg(fig3, master=p4).get_tk_widget().pack(fill="x", padx=4)
 
+    def enviar_resumen(self):
+        self.app.enviar_telegram(telegram_bot.mensaje_resumen(self.periodo, self.kpis_resumen, self.alertas_actuales),
+                                 self.lbl_tg)
+
     def pintar_alertas(self):
+        self.alertas_actuales = []
         for w in self.alertas.winfo_children():
             w.destroy()
         res = self.app.paginas["ia"].resultados if "ia" in self.app.paginas else pd.DataFrame()
@@ -645,6 +658,7 @@ class PaginaInicio(ctk.CTkScrollableFrame):
                               f" por aprobar: {motivo}")
                     detalle = (f"De {len(res)} mensajes recibidos hasta las {ia.recibido:%H:%M}; el primero vence a "
                                f"las {urg.limite.min():%H:%M}.")
+            self.alertas_actuales.append((titulo, detalle))
             f = ctk.CTkFrame(self.alertas, fg_color="transparent")
             f.pack(fill="x", pady=7)
             ctk.CTkFrame(f, width=3, height=38, corner_radius=0, fg_color=color).pack(side="left", padx=(0, 14))
@@ -1067,6 +1081,7 @@ class PaginaIA(ctk.CTkScrollableFrame):
         res["sentimiento_real"] = muestra.sentimiento.values
         res["fecha_resena"] = muestra.fecha.values
         self.recibido = dt.datetime.now()
+        self.avisados_vencer = set()   # tickets ya recordados por Telegram
         # Simulación: los mensajes llegaron a lo largo de la última hora y media
         minutos = sorted((random.uniform(0, 90) for _ in range(n)), reverse=True)
         res["llegada"] = [self.recibido - dt.timedelta(minutes=m) for m in minutos]
@@ -1319,6 +1334,10 @@ class PaginaVoz(ctk.CTkScrollableFrame):
         voz, rk = d.voz, d.ranking
         acciones = encabezado(self, "Voz del cliente")
         boton(acciones, "Exportar ranking", self.exportar, principal=False, width=150).pack(side="right")
+        boton(acciones, "Vendedores en riesgo a Telegram", self.enviar_telegram, principal=False, width=240).pack(
+            side="right", padx=(0, 8))
+        self.lbl_tg = ctk.CTkLabel(acciones, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2)
+        self.lbl_tg.pack(side="right", padx=(0, 12))
 
         kpi = FranjaKPI(self, [
             ("res", "Reseñas analizadas", TINTA), ("neg", "Negativas según la IA", COBRE),
@@ -1409,6 +1428,14 @@ class PaginaVoz(ctk.CTkScrollableFrame):
         hijos = self.tabla.get_children()
         if hijos:
             self.tabla.selection_set(hijos[0])
+
+    def enviar_telegram(self):
+        d = self.app.datos
+        riesgo = d.ranking[d.ranking.estado == "En riesgo"]
+        filas = [(f"V-{int(v):04d}", int(r.resenas), pct(r.pct_neg, 0), r.tema, r.categoria)
+                 for v, r in riesgo.head(10).iterrows()]
+        self.app.enviar_telegram(telegram_bot.mensaje_vendedores(filas, len(riesgo), len(d.ranking),
+                                                                 pct(d.pct_neg_prom, 0)), self.lbl_tg)
 
     def ver_vendedor(self, _=None):
         sel = self.tabla.selection()
@@ -1929,6 +1956,7 @@ class App(ctk.CTk):
         inicial = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] in self.paginas else "inicio"
         self.ir(inicial)
         self.after(1500, lambda: self.buscar_actualizacion(False))
+        self.after(15000, self._vigilar)
 
     def mostrar_tip(self, texto, y):
         self.tip.configure(text=f"   {texto}   ")
@@ -2074,6 +2102,43 @@ class App(ctk.CTk):
             self.canales["telegram"] = False
             self.paginas["canales"].refrescar()
             dlg.destroy()
+
+    def enviar_telegram(self, texto, etiqueta=None):
+        """Envía un mensaje a Telegram en segundo plano; si no está configurado, ofrece configurarlo."""
+        if not telegram_bot.configurado(self.telegram):
+            if messagebox.askyesno(APP_NOMBRE, "Telegram no está configurado. ¿Quieres configurarlo ahora?"):
+                self.dialogo_telegram()
+            return
+        if etiqueta is not None:
+            etiqueta.configure(text="Enviando a Telegram…", text_color=TEXTO_2)
+        conf = dict(self.telegram)
+
+        def tarea():
+            try:
+                telegram_bot.enviar(conf["token"], conf["chat_id"], texto)
+                res = ("✓ Enviado a Telegram", PETROLEO)
+            except telegram_bot.ErrorTelegram as e:
+                res = (str(e), COBRE)
+            if etiqueta is not None:
+                self.after(0, lambda: etiqueta.configure(text=res[0], text_color=res[1]))
+
+        threading.Thread(target=tarea, daemon=True).start()
+
+    MINUTOS_AVISO = 30   # recordar un urgente sin aprobar cuando falta media hora para su plazo
+
+    def _vigilar(self):
+        """Cada minuto: recuerda por Telegram los urgentes sin aprobar que están por vencer (si el canal está activo)."""
+        try:
+            ia = self.paginas.get("ia")
+            if ia is not None and self.canales.get("telegram") and telegram_bot.configurado(self.telegram):
+                ahora = dt.datetime.now()
+                for i, r in ia.pendientes_alta().iterrows():
+                    falta = int((r.limite - ahora).total_seconds() // 60)
+                    if i not in ia.avisados_vencer and falta <= self.MINUTOS_AVISO:
+                        ia.avisados_vencer.add(i)
+                        self.enviar_telegram(telegram_bot.mensaje_por_vencer(r.to_dict(), falta), ia.lbl_tg)
+        finally:
+            self.after(60000, self._vigilar)
 
     def avisar_telegram(self, tickets, al_terminar=None):
         """Envía en segundo plano los tickets críticos a Telegram, si el canal está activo."""
