@@ -12,6 +12,7 @@ Módulos:
 """
 import datetime as dt
 import os
+import random
 import sys
 import threading
 import time
@@ -102,6 +103,16 @@ def sin_tildes(texto):
 
 def mes_txt(periodo):
     return f"{MESES[periodo.month - 1]}-{str(periodo.year)[2:]}"
+
+
+def plazo(sla):
+    """'2 h' → timedelta de 2 horas."""
+    return dt.timedelta(hours=int(str(sla).split()[0]))
+
+
+def duracion(minutos):
+    m = int(round(minutos))
+    return f"{m} min" if m < 60 else f"{m // 60} h {m % 60:02d} min"
 
 
 def variacion(actual, anterior, puntos=False):
@@ -621,17 +632,19 @@ class PaginaInicio(ctk.CTkScrollableFrame):
                 if res.empty:
                     continue
                 ia = self.app.paginas["ia"]
-                urg = res[res.prioridad == "Alta"]
+                urg = ia.pendientes_alta()
                 if urg.empty:
-                    titulo = "Sin reclamos urgentes en la bandeja"
-                    detalle = f"La IA clasificó {len(res)} mensajes nuevos y ninguno es de prioridad alta."
+                    hubo = int((res.prioridad == "Alta").sum())
+                    titulo = "Sin reclamos urgentes pendientes"
+                    detalle = (f"Los {hubo} urgentes del lote ya fueron respondidos." if hubo else
+                               f"La IA clasificó {len(res)} mensajes nuevos y ninguno es de prioridad alta.")
                 else:
                     partes = [f"{n} por {t.lower()}" for t, n in urg.tema.value_counts().items()]
                     motivo = ", ".join(partes[:-1]) + (" y " if len(partes) > 1 else "") + partes[-1]
                     titulo = (f"{len(urg)} reclamo{'s' if len(urg) != 1 else ''} urgente{'s' if len(urg) != 1 else ''}"
-                              f" en la bandeja: {motivo}")
-                    detalle = (f"De {len(res)} mensajes recibidos a las {ia.recibido:%H:%M}; responder antes de las "
-                               f"{ia.limite:%H:%M}.")
+                              f" por aprobar: {motivo}")
+                    detalle = (f"De {len(res)} mensajes recibidos hasta las {ia.recibido:%H:%M}; el primero vence a "
+                               f"las {urg.limite.min():%H:%M}.")
             f = ctk.CTkFrame(self.alertas, fg_color="transparent")
             f.pack(fill="x", pady=7)
             ctk.CTkFrame(f, width=3, height=38, corner_radius=0, fg_color=color).pack(side="left", padx=(0, 14))
@@ -860,9 +873,10 @@ class PaginaAnalisis(ctk.CTkScrollableFrame):
 
 # ---------------------------------------------------------------- Bandeja IA
 class PaginaIA(ctk.CTkScrollableFrame):
-    COLS = [("n", "N°", 44), ("mensaje", "Mensaje del cliente", 360), ("sent", "Sentimiento", 100),
-            ("conf", "Confianza", 84), ("tema", "Tema detectado", 200), ("prio", "Prioridad", 80),
-            ("canal", "Canal de respuesta", 170)]
+    COLS = [("n", "N°", 44), ("mensaje", "Mensaje del cliente", 330), ("sent", "Sentimiento", 96),
+            ("tema", "Tema detectado", 190), ("prio", "Prioridad", 76), ("canal", "Canal de respuesta", 160),
+            ("estado", "Estado", 118)]
+    ESTADO = ("llegada", "limite", "estado", "respondido_por", "respondido_en", "respuesta_enviada")
 
     def __init__(self, padre, app):
         super().__init__(padre, fg_color=BLANCO, corner_radius=10)
@@ -892,8 +906,9 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.lbl_lote.pack(fill="x", padx=36, pady=(0, 8))
 
         self.kpi = FranjaKPI(self, [
-            ("proc", "Procesados", TINTA), ("neg", "Negativos", COBRE), ("alta", "Prioridad alta", COBRE),
-            ("acierto", "Coincide con nota real", PETROLEO), ("ahorro", "Tiempo ahorrado", TINTA),
+            ("proc", "Procesados", TINTA), ("alta", "Prioridad alta", COBRE), ("resp", "Respondidos", PETROLEO),
+            ("primera", "Primera respuesta", TINTA), ("acierto", "Coincide con nota real", PETROLEO),
+            ("ahorro", "Tiempo ahorrado", TINTA),
         ])
         self.kpi.pack(fill="x", padx=32, pady=(0, 12))
 
@@ -917,13 +932,14 @@ class PaginaIA(ctk.CTkScrollableFrame):
         ct.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         f = titulo_panel(ct, "Entrada")
         self.filtro = ctk.CTkSegmentedButton(
-            f, values=["Todos", "Alta", "Media", "Baja"], command=lambda _: self.pintar_tabla(), corner_radius=3,
+            f, values=["Todos", "Pendientes", "Alta", "Media", "Baja"], command=lambda _: self.pintar_tabla(),
+            corner_radius=3,
             height=26, font=(CUERPO_SB, 11), fg_color="#E6E0D2", selected_color=TINTA, selected_hover_color=TINTA_2,
             unselected_color="#A3ADB8", unselected_hover_color="#8A97A5", text_color="white",
             text_color_disabled=TEXTO_2)
         self.filtro.set("Todos")
         self.filtro.pack(side="right")
-        rotulo(f, "Prioridad", size=9).pack(side="right", padx=8)
+        rotulo(f, "Mostrar", size=9).pack(side="right", padx=8)
         marco = ctk.CTkFrame(ct, fg_color="transparent")
         marco.pack(fill="both", expand=True, padx=20, pady=(12, 18))
         self.tabla = ttk.Treeview(marco, columns=[c[0] for c in self.COLS], show="headings", selectmode="browse",
@@ -935,6 +951,7 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.tabla.tag_configure("Alta", background=TINTE_ALTA)
         self.tabla.tag_configure("Media", background=TINTE_MEDIA)
         self.tabla.tag_configure("Baja", background=TINTE_BAJA)
+        self.tabla.tag_configure("hecho", foreground="#8A8577")   # ya respondido
         sb = ttk.Scrollbar(marco, orient="vertical", command=self.tabla.yview)
         self.tabla.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
@@ -986,7 +1003,14 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.txt_resp = ctk.CTkTextbox(tk_, height=110, font=(CUERPO, 12), wrap="word", fg_color="#EEF2F6",
                                        corner_radius=3, border_width=0, text_color=TEXTO)
         self.txt_resp.pack(fill="x", padx=20)
-        boton(tk_, "Copiar respuesta", self.copiar, principal=False, width=150).pack(anchor="e", padx=20, pady=12)
+        envio = ctk.CTkFrame(tk_, fg_color="transparent")
+        envio.pack(fill="x", padx=20, pady=12)
+        self.btn_enviar = boton(envio, "Enviar respuesta", self.enviar, width=150)
+        self.btn_enviar.pack(side="right")
+        boton(envio, "Copiar", self.copiar, principal=False, width=80).pack(side="right", padx=(0, 8))
+        self.lbl_envio = ctk.CTkLabel(envio, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2, anchor="w",
+                                      justify="left", wraplength=260)
+        self.lbl_envio.pack(side="left", fill="x", expand=True)
 
         linea(tk_, padx=20)
         rotulo(tk_, "Probar con un mensaje (el modelo entiende portugués)").pack(fill="x", padx=20, pady=(12, 6))
@@ -1038,43 +1062,84 @@ class PaginaIA(ctk.CTkScrollableFrame):
         muestra = self.d.resenas.sample(n)
         t0 = time.perf_counter()
         res = self.clasificar(muestra.texto.tolist())
-        seg = time.perf_counter() - t0
+        self.seg = time.perf_counter() - t0
         res["nota_real"] = muestra.nota.values
         res["sentimiento_real"] = muestra.sentimiento.values
         res["fecha_resena"] = muestra.fecha.values
-        self.resultados = res
         self.recibido = dt.datetime.now()
-        self.limite = self.recibido + dt.timedelta(hours=2)   # plazo de los urgentes
-        self.lbl_lote.configure(text=f"{n} mensajes recibidos hoy a las {self.recibido:%H:%M}  ·  simulación con "
-                                     "reseñas reales de clientes que la IA no vio al entrenar")
-        self.pintar_tabla()
-        self.pintar_urgentes()
-
-        manual_min = n * 3  # supuesto: 3 minutos por mensaje leído, clasificado y respondido a mano
-        self.kpi.set("proc", num(n), f"en {num(seg, 2)} segundos")
-        self.kpi.set("neg", num((res.sentimiento == "Negativo").sum()), pct((res.sentimiento == "Negativo").mean(), 0)
-                     + " de la bandeja")
-        alta = int((res.prioridad == "Alta").sum())
-        self.kpi.set("alta", num(alta), "responder en menos de 2 h")
-        self.kpi.set("acierto", pct((res.sentimiento == res.sentimiento_real).mean(), 0), "IA vs. nota del cliente")
-        self.kpi.set("ahorro", f"{num(manual_min / 60, 1)} h" if manual_min >= 60 else f"{manual_min} min",
-                     "supuesto: 3 min por mensaje")
-        self.app.bandeja_actualizada(alta)
+        # Simulación: los mensajes llegaron a lo largo de la última hora y media
+        minutos = sorted((random.uniform(0, 90) for _ in range(n)), reverse=True)
+        res["llegada"] = [self.recibido - dt.timedelta(minutes=m) for m in minutos]
+        res["limite"] = [ll + plazo(s) for ll, s in zip(res.llegada, res.sla)]
+        # Respuesta automática para la prioridad baja; media y alta esperan a un agente (alta: aprobación)
+        auto = (res.prioridad == "Baja").tolist()
+        res["estado"] = ["Respondido" if a else "Pendiente" for a in auto]
+        res["respondido_por"] = ["Automático" if a else "" for a in auto]
+        res["respondido_en"] = pd.to_datetime([ll + dt.timedelta(seconds=5) if a else pd.NaT
+                                               for ll, a in zip(res.llegada, auto)])
+        res["respuesta_enviada"] = [r if a else "" for r, a in zip(res.respuesta, auto)]
+        self.resultados = res
+        self.lbl_lote.configure(text=f"{n} mensajes recibidos entre las {res.llegada.min():%H:%M} y las "
+                                     f"{self.recibido:%H:%M}  ·  {sum(auto)} respondidos automáticamente  ·  simulación "
+                                     "con reseñas reales de clientes que la IA no vio al entrenar")
+        self.refrescar()
         if avisar:
             self.app.avisar_telegram(res.to_dict("records"), self.aviso_telegram)
+
+    def pendientes_alta(self):
+        r = self.resultados
+        return r[(r.prioridad == "Alta") & (r.estado != "Respondido")] if not r.empty else r
+
+    def refrescar(self, seleccion=None):
+        """Vuelve a pintar tabla, urgentes, KPIs, insignia y alertas tras un cambio en la bandeja."""
+        self.pintar_tabla()
+        if seleccion is not None and str(seleccion) in self.tabla.get_children():
+            self.tabla.selection_set(str(seleccion))
+            self.tabla.see(str(seleccion))
+        self.pintar_urgentes()
+        self.actualizar_kpis()
+        self.app.bandeja_actualizada(len(self.pendientes_alta()))
+
+    def actualizar_kpis(self):
+        res = self.resultados
+        n = len(res)
+        resp = res[res.estado == "Respondido"]
+        auto = int((resp.respondido_por == "Automático").sum())
+        alta = int((res.prioridad == "Alta").sum())
+        pend = len(self.pendientes_alta())
+        self.kpi.set("proc", num(n), f"en {num(self.seg, 2)} segundos")
+        self.kpi.set("alta", num(alta), f"{pend} por aprobar" if pend else ("todas respondidas" if alta else "ninguna"))
+        self.kpi.set("resp", f"{len(resp)} de {n}", f"{auto} automáticas · {len(resp) - auto} por un agente")
+        agente = resp[resp.respondido_por != "Automático"]
+        if len(agente):
+            m = (agente.respondido_en - agente.llegada).mean().total_seconds() / 60
+            self.kpi.set("primera", duracion(m), "promedio de los agentes · meta: menos de 2 h")
+            self.kpi.valores["primera"].configure(text_color=PETROLEO if m <= 120 else COBRE)
+        else:
+            self.kpi.set("primera", "—", "aún sin respuestas de un agente")
+            self.kpi.valores["primera"].configure(text_color=TINTA)
+        self.kpi.set("acierto", pct((res.sentimiento == res.sentimiento_real).mean(), 0), "IA vs. nota del cliente")
+        manual_min = n * 3  # supuesto: 3 minutos por mensaje leído, clasificado y respondido a mano
+        self.kpi.set("ahorro", f"{num(manual_min / 60, 1)} h" if manual_min >= 60 else f"{manual_min} min",
+                     "supuesto: 3 min por mensaje")
 
     def pintar_urgentes(self, maximo=6):
         for w in self.lista_urg.winfo_children():
             w.destroy()
         res = self.resultados
-        urg = res[res.prioridad == "Alta"] if not res.empty else res
-        if urg.empty:
-            self.lbl_urg.configure(text="")
-            ctk.CTkLabel(self.lista_urg, text="Sin reclamos urgentes en este lote.", font=(CUERPO, 12),
-                         text_color=TEXTO_2, anchor="w").pack(fill="x", pady=(0, 8))
+        if res.empty:
             return
-        self.lbl_urg.configure(text=f"{len(urg)} reclamo{'s' if len(urg) != 1 else ''} urgente"
-                                    f"{'s' if len(urg) != 1 else ''}  ·  responder antes de las {self.limite:%H:%M}")
+        ahora = dt.datetime.now()
+        urg = self.pendientes_alta().sort_values("limite")
+        if urg.empty:
+            hubo = int((res.prioridad == "Alta").sum())
+            self.lbl_urg.configure(text="✓ Todos los urgentes respondidos" if hubo else "", text_color=PETROLEO)
+            ctk.CTkLabel(self.lista_urg, text="No hay reclamos urgentes pendientes." if hubo else
+                         "Sin reclamos urgentes en este lote.", font=(CUERPO, 12), text_color=TEXTO_2,
+                         anchor="w").pack(fill="x", pady=(0, 8))
+            return
+        self.lbl_urg.configure(text=f"{len(urg)} por aprobar  ·  el primero vence a las {urg.limite.min():%H:%M}",
+                               text_color=COBRE)
         for i, r in urg.head(maximo).iterrows():
             f = ctk.CTkFrame(self.lista_urg, fg_color="transparent")
             f.pack(fill="x", pady=4)
@@ -1083,18 +1148,22 @@ class PaginaIA(ctk.CTkScrollableFrame):
                 side="left")
             ctk.CTkLabel(f, text=f"{r.tema}  ·  {r.area}  ·  {r.canal}", font=(CUERPO_SB, 12), text_color=TINTA,
                          width=380, anchor="w").pack(side="left")
-            texto = r.mensaje if len(r.mensaje) <= 70 else r.mensaje[:70] + "…"
+            texto = r.mensaje if len(r.mensaje) <= 64 else r.mensaje[:64] + "…"
             ctk.CTkButton(f, text="Ver  →", command=lambda k=i: self.seleccionar(k), width=64, height=28,
                           fg_color="transparent", hover_color="#F1EEE6", text_color=TINTA,
                           font=(CUERPO_SB, 12)).pack(side="right")
-            ctk.CTkLabel(f, text=f"antes de las {self.limite:%H:%M}", font=(CUERPO_SB, 12), text_color=COBRE).pack(
-                side="right", padx=(12, 8))
+            vencido = ahora > r.limite
+            ctk.CTkLabel(f, text="VENCIDO" if vencido else f"vence a las {r.limite:%H:%M}", font=(CUERPO_SB, 12),
+                         text_color=COBRE).pack(side="right", padx=(12, 8))
+            ctk.CTkLabel(f, text=f"llegó {r.llegada:%H:%M}", font=(CUERPO, 11), text_color=TEXTO_2).pack(
+                side="right", padx=(12, 0))
             ctk.CTkLabel(f, text=f"«{texto}»", font=(CUERPO, 12), text_color=TEXTO_2, anchor="w").pack(
                 side="left", fill="x", expand=True)
         if len(urg) > maximo:
-            ctk.CTkButton(self.lista_urg, text=f"y {len(urg) - maximo} más: ver todos los urgentes  →",
-                          command=self.ver_urgentes, fg_color="transparent", hover_color="#F1EEE6",
-                          text_color=TINTA, font=(CUERPO_SB, 12), anchor="w", height=26).pack(anchor="w")
+            ctk.CTkButton(self.lista_urg, text=f"y {len(urg) - maximo} más: ver todos los pendientes  →",
+                          command=lambda: (self.filtro.set("Pendientes"), self.pintar_tabla()),
+                          fg_color="transparent", hover_color="#F1EEE6", text_color=TINTA, font=(CUERPO_SB, 12),
+                          anchor="w", height=26).pack(anchor="w")
 
     def seleccionar(self, i):
         """Abre la ficha de un ticket de la bandeja y lo marca en la tabla."""
@@ -1108,18 +1177,27 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.filtro.set("Alta")
         self.pintar_tabla()
 
+    @staticmethod
+    def estado_txt(r, ahora):
+        if r.estado == "Respondido":
+            return "✓ Automático" if r.respondido_por == "Automático" else "✓ Respondido"
+        return "Vencido" if ahora > r.limite else ("Por aprobar" if r.prioridad == "Alta" else "Pendiente")
+
     def pintar_tabla(self):
         self.tabla.delete(*self.tabla.get_children())
         res = self.resultados
         if res.empty:
             return
-        filtro = self.filtro.get()
+        filtro, ahora = self.filtro.get(), dt.datetime.now()
         for i, r in res.iterrows():
-            if filtro != "Todos" and r.prioridad != filtro:
+            if filtro == "Pendientes" and r.estado == "Respondido":
                 continue
-            self.tabla.insert("", "end", iid=str(i), tags=(r.prioridad,), values=(
-                f"{i + 1:02d}", r.mensaje[:90] + ("…" if len(r.mensaje) > 90 else ""), r.sentimiento,
-                pct(r.confianza, 0), r.tema, r.prioridad, r.canal))
+            if filtro in ("Alta", "Media", "Baja") and r.prioridad != filtro:
+                continue
+            etiquetas = (r.prioridad, "hecho") if r.estado == "Respondido" else (r.prioridad,)
+            self.tabla.insert("", "end", iid=str(i), tags=etiquetas, values=(
+                f"{i + 1:02d}", r.mensaje[:90] + ("…" if len(r.mensaje) > 90 else ""), r.sentimiento, r.tema,
+                r.prioridad, r.canal, self.estado_txt(r, ahora)))
         hijos = self.tabla.get_children()
         if hijos:
             self.tabla.selection_set(hijos[0])
@@ -1152,13 +1230,52 @@ class PaginaIA(ctk.CTkScrollableFrame):
         self.txt_msg.delete("1.0", "end")
         self.txt_msg.insert("1.0", r["mensaje"])
         self.pintar_respuesta()
+        self.pintar_envio()
+
+    def pintar_envio(self):
+        """Estado de envío del ticket abierto y el botón que corresponde."""
+        r = self.actual
+        if r is None or "estado" not in r:
+            self.lbl_envio.configure(text="Mensaje de prueba: no se envía a ningún cliente.", text_color=TEXTO_2)
+            self.btn_enviar.configure(text="Enviar respuesta", state="disabled")
+        elif r["estado"] == "Respondido":
+            a_tiempo = r["respondido_en"] <= r["limite"]
+            quien = "automáticamente" if r["respondido_por"] == "Automático" else "por un agente"
+            self.lbl_envio.configure(text=f"✓ Enviada {quien} a las {r['respondido_en']:%H:%M} · "
+                                          f"{'dentro del plazo' if a_tiempo else 'fuera de plazo'}",
+                                     text_color=PETROLEO if a_tiempo else COBRE)
+            self.btn_enviar.configure(text="Enviada", state="disabled")
+        else:
+            vencido = dt.datetime.now() > r["limite"]
+            self.lbl_envio.configure(text=(f"Llegó a las {r['llegada']:%H:%M} · " +
+                                           ("plazo VENCIDO" if vencido else f"vence a las {r['limite']:%H:%M}")),
+                                     text_color=COBRE if (vencido or r["prioridad"] == "Alta") else TEXTO_2)
+            self.btn_enviar.configure(text="Aprobar y enviar" if r["prioridad"] == "Alta" else "Enviar respuesta",
+                                      state="normal")
 
     def pintar_respuesta(self):
         if self.actual is None:
             return
-        campo = "respuesta_pt" if self.idioma.get() == "Português" else "respuesta"
+        r = self.actual
+        if "estado" in r and r["estado"] == "Respondido" and self.idioma.get() == "Español":
+            texto = r["respuesta_enviada"] or r["respuesta"]
+        else:
+            texto = r["respuesta_pt" if self.idioma.get() == "Português" else "respuesta"]
         self.txt_resp.delete("1.0", "end")
-        self.txt_resp.insert("1.0", self.actual[campo])
+        self.txt_resp.insert("1.0", texto)
+
+    def enviar(self):
+        """Envía (simulado) la respuesta del ticket abierto: queda registrada con su hora y el plazo cumplido o no."""
+        r = self.actual
+        if r is None or "estado" not in r or r["estado"] == "Respondido":
+            return
+        i = r.name
+        self.resultados.loc[i, "estado"] = "Respondido"
+        self.resultados.loc[i, "respondido_por"] = "Agente"
+        self.resultados.loc[i, "respondido_en"] = pd.Timestamp(dt.datetime.now())
+        self.resultados.loc[i, "respuesta_enviada"] = self.txt_resp.get("1.0", "end").strip()
+        self.refrescar(seleccion=i)
+        self.mostrar(self.resultados.loc[i], self.resultados.loc[i, "nota_real"])
 
     def ver_detalle(self, _=None):
         sel = self.tabla.selection()
@@ -2103,12 +2220,10 @@ class App(ctk.CTk):
         ia = self.paginas["ia"]
         if not ia.resultados.empty:   # re-clasifica la bandeja actual con los canales vigentes
             res = ia.clasificar(ia.resultados.mensaje.tolist())
-            for col in ("nota_real", "sentimiento_real", "fecha_resena"):
+            for col in ("nota_real", "sentimiento_real", "fecha_resena") + PaginaIA.ESTADO:
                 res[col] = ia.resultados[col].values
             ia.resultados = res
-            ia.pintar_tabla()
-            ia.pintar_urgentes()
-            self.bandeja_actualizada(int((res.prioridad == "Alta").sum()))
+            ia.refrescar()
 
 
 if __name__ == "__main__":
