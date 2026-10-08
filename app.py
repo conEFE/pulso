@@ -40,7 +40,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 
 APP_NOMBRE = "PULSO"
-VERSION = "1.6.0"
+VERSION = "1.6.1"
 ESPACIO = "Olist Store"
 
 # ---------------------------------------------------------------- identidad visual
@@ -504,7 +504,8 @@ class PaginaInicio(ctk.CTkScrollableFrame):
         boton(acciones, "Procesar bandeja", lambda: app.ir("ia", procesar=True), width=150).pack(side="right")
         boton(acciones, "Resumen a Telegram", self.enviar_resumen, principal=False, width=170).pack(
             side="right", padx=(0, 8))
-        self.lbl_tg = ctk.CTkLabel(acciones, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2)
+        self.lbl_tg = ctk.CTkLabel(acciones, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2, justify="right",
+                                   wraplength=380)
         self.lbl_tg.pack(side="right", padx=(0, 12))
 
         # Banda de KPIs del último mes
@@ -913,7 +914,8 @@ class PaginaIA(ctk.CTkScrollableFrame):
         ctk.CTkLabel(estado, text=f"Modelo de sentimiento v1 · TF-IDF + regresión logística · {pct(d.precision, 0)} de "
                                   f"acierto en {num(d.n_test)} reseñas no vistas", font=(CUERPO, 12),
                      text_color=TEXTO_2).pack(side="left", padx=12)
-        self.lbl_tg = ctk.CTkLabel(estado, text="", font=(CUERPO_SB, 12), text_color=TEXTO_2)
+        self.lbl_tg = ctk.CTkLabel(estado, text="", font=(CUERPO_SB, 12), text_color=TEXTO_2, justify="right",
+                                   wraplength=460)
         self.lbl_tg.pack(side="right")
         # De dónde viene el lote: se dice explícitamente que es una simulación con reseñas reales
         self.lbl_lote = ctk.CTkLabel(self, text="", font=(CUERPO, 12), text_color=TEXTO_2, anchor="w")
@@ -1336,7 +1338,8 @@ class PaginaVoz(ctk.CTkScrollableFrame):
         boton(acciones, "Exportar ranking", self.exportar, principal=False, width=150).pack(side="right")
         boton(acciones, "Vendedores en riesgo a Telegram", self.enviar_telegram, principal=False, width=240).pack(
             side="right", padx=(0, 8))
-        self.lbl_tg = ctk.CTkLabel(acciones, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2)
+        self.lbl_tg = ctk.CTkLabel(acciones, text="", font=(CUERPO_SB, 11), text_color=TEXTO_2, justify="right",
+                                   wraplength=380)
         self.lbl_tg.pack(side="right", padx=(0, 12))
 
         kpi = FranjaKPI(self, [
@@ -2005,7 +2008,7 @@ class App(ctk.CTk):
         b_ver = boton(fila1, "Verificar", lambda: verificar(), principal=False, width=90, height=32)
         b_ver.pack(side="left", padx=(8, 0))
         r1 = ctk.CTkLabel(c1, text=f"✓ Bot @{conf['bot']}" if conf.get("bot") else "", font=(CUERPO_SB, 11),
-                          text_color=PETROLEO, anchor="w")
+                          text_color=PETROLEO, anchor="w", justify="left", wraplength=500)
         r1.pack(fill="x")
 
         c2 = paso(2, "Escríbele a tu bot",
@@ -2021,17 +2024,17 @@ class App(ctk.CTk):
         boton(fila2, "Detectar chat", lambda: detectar(), principal=False, width=120, height=32).pack(
             side="left", padx=(8, 0))
         r2 = ctk.CTkLabel(c2, text=f"✓ Chat: {conf['chat_nombre']}" if conf.get("chat_id") else "",
-                          font=(CUERPO_SB, 11), text_color=PETROLEO, anchor="w")
+                          font=(CUERPO_SB, 11), text_color=PETROLEO, anchor="w", justify="left", wraplength=500)
         r2.pack(fill="x")
 
         c3 = paso(3, "Prueba el aviso", "Envía un mensaje de prueba para confirmar que llega a tu celular.")
         b_prueba = boton(c3, "Enviar mensaje de prueba", lambda: probar(), principal=False, width=190, height=32)
         b_prueba.pack(anchor="w", pady=(6, 0))
-        r3 = ctk.CTkLabel(c3, text="", font=(CUERPO_SB, 11), text_color=PETROLEO, anchor="w")
+        r3 = ctk.CTkLabel(c3, text="", font=(CUERPO_SB, 11), text_color=PETROLEO, anchor="w", justify="left", wraplength=500)
         r3.pack(fill="x")
 
         estado = ctk.CTkLabel(dlg, text="El token se guarda solo en este computador.", font=(CUERPO, 11),
-                              text_color=TEXTO_2, anchor="w")
+                              text_color=TEXTO_2, anchor="w", justify="left", wraplength=540)
         botones = ctk.CTkFrame(dlg, fg_color="transparent")
         botones.pack(side="bottom", fill="x", padx=28, pady=18)
         estado.pack(side="bottom", fill="x", padx=28)
