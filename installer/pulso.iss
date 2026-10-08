@@ -49,11 +49,13 @@ Name: "{autodesktop}\PULSO"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopic
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,PULSO}"; Flags: nowait postinstall skipifsilent
-; Actualización automática (la app lanza el instalador con /RELAUNCH): reabrir PULSO al terminar
+; Actualización automática: reabrir PULSO al terminar. La app lanza el instalador con /RELAUNCH (desde la 1.5.0);
+; la 1.4.0 lo lanzaba solo con /CLOSEAPPLICATIONS, que también se acepta para que esa actualización reabra la app
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: DebeReabrir
 
 [Code]
 function DebeReabrir: Boolean;
 begin
-  Result := WizardSilent and (Pos('/RELAUNCH', UpperCase(GetCmdTail)) > 0);
+  Result := WizardSilent and ((Pos('/RELAUNCH', UpperCase(GetCmdTail)) > 0) or
+                             (Pos('/CLOSEAPPLICATIONS', UpperCase(GetCmdTail)) > 0));
 end;
