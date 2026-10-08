@@ -226,6 +226,8 @@ s_valid = nueva_diapositiva(s_voz, "Pruebas y validación del modelo")
 s_canales = nueva_diapositiva(s_valid, "Plataformas y canales digitales")
 s_integ = nueva_diapositiva(s_canales, "Integración en los procesos de la organización")
 s_canales_app = nueva_diapositiva(s_integ, "Canales e integraciones en PULSO")
+s_telegram = nueva_diapositiva(s_canales_app, "Avisos por Telegram: la integración real")
+s_dist = nueva_diapositiva(s_telegram, "Distribución y actualizaciones")
 
 for s in prs.slides:
     limpiar_vacios(s)
@@ -249,14 +251,15 @@ notas(portada, "Presento PULSO, un centro de operaciones digitales que diseñé 
 # ---------------------------------------------------------------- 2. Temario
 items = ["Introducción", "Entorno tecnológico actual", "Necesidades tecnológicas", "Selección de tecnologías",
          "Tecnologías clave: PULSO", "Análisis de datos (2.1.1)", "Automatización con IA (2.1.2)",
-         "Voz del cliente con IA", "Pruebas del modelo", "Canales digitales (2.1.3)", "Integración en la organización", "Implementación", "Gestión del cambio",
+         "Voz del cliente con IA", "Pruebas del modelo", "Canales digitales (2.1.3)", "Integración en la organización",
+         "Avisos por Telegram", "Distribución y actualizaciones", "Implementación", "Gestión del cambio",
          "Impacto y mejora continua", "Conclusiones"]
 col_w = ANCHO / 2
 for i, it in enumerate(items):
-    col, fila = divmod(i, 8)
-    x, y = X0 + col * col_w, Y0 + 10 + fila * 86
-    numero(temario, x, y, i + 1, size=40)
-    texto(temario, x + 110, y + 8, col_w - 160, 60, it, size=32, color=GRIS)
+    col, fila = divmod(i, 9)
+    x, y = X0 + col * col_w, Y0 + 4 + fila * 76
+    numero(temario, x, y, i + 1, size=36)
+    texto(temario, x + 100, y + 6, col_w - 150, 56, it, size=30, color=GRIS)
 notas(temario, "Este es el recorrido: parto por el contexto y el diagnóstico, explico qué tecnologías elegí y por "
                "qué, muestro el prototipo funcionando en sus tres módulos y cierro con la implementación, la gestión "
                "del cambio y cómo mediríamos el impacto.")
@@ -381,9 +384,12 @@ filas = [
     ["Clientes", "WhatsApp Business API + email", "SMS / call center", "Inmediato, de bajo costo y automatizable"],
     ["Gestión de clientes", "CRM HubSpot / Zoho", "Planillas", "Importa los tickets que genera la IA"],
     ["Proveedores", "Seller Center + API ERP", "Correo manual", "Alertas automáticas por vendedor"],
+    ["Avisos al equipo", "Bot de Telegram", "SMS / correo", "Gratuito, inmediato y llega al celular"],
+    ["Distribución", "Instalador + actualización automática (GitHub)", "Copiar el .exe a mano",
+     "Se instala en un clic y cada versión llega sola, verificada"],
 ]
-tabla(seleccion, X0, Y0 + 10, ANCHO, filas, [2.2, 3.2, 2.4, 4.2], size=22, alto_fila=96, resaltar_col=1)
-texto(seleccion, X0, Y0 + 10 + 96 * 7 + 24, ANCHO, 40,
+tabla(seleccion, X0, Y0 + 10, ANCHO, filas, [2.2, 3.2, 2.4, 4.2], size=21, alto_fila=78, resaltar_col=1)
+texto(seleccion, X0, Y0 + 10 + 78 * 9 + 20, ANCHO, 40,
       "Criterios: costo, facilidad de uso, integración con el resto de las plataformas y escalabilidad.",
       size=20, color=SUAVE)
 notas(seleccion, "Para cada ámbito comparé alternativas con cuatro criterios: costo, facilidad, integración y "
@@ -396,31 +402,31 @@ texto(clave, X0, Y0 + 70, 680, 120, "Producto de escritorio (.exe) para el equip
                                     "los datos reales de Olist.", size=26, color=TEXTO)
 modulos = [("Inicio", "KPIs del mes, alertas y acciones rápidas", "panel diario"),
            ("Analítica", "Ventas, logística y pagos con insights", "2.1.1"),
-           ("Bandeja IA", "Clasifica, explica, prioriza y responde", "2.1.2"),
+           ("Bandeja IA", "Clasifica, prioriza y responde con aprobación", "2.1.2"),
            ("Voz del cliente", "Tendencia de reclamos y ranking de vendedores", "2.1.2"),
            ("Modelo IA", "Métricas, pruebas y casos generados en vivo", "2.1.2"),
-           ("Canales", "Integraciones y reglas de automatización", "2.1.3")]
+           ("Canales", "Integraciones, reglas y Telegram (real)", "2.1.3")]
 for i, (t, d, c) in enumerate(modulos):
     y = Y0 + 180 + i * 92
     numero(clave, X0, y, i + 1, size=40)
     texto(clave, X0 + 110, y + 2, 600, 44, [[(t, {}), (f"   {c.upper()}", {"size": 15, "color": ROJO})]],
           size=27, color=GRIS, bold=True)
     texto(clave, X0 + 110, y + 46, 600, 36, d, size=21, color=TEXTO)
-_, w_, h_ = imagen(clave, "ppt/img/app_inicio.png", 830, Y0, w=990, recorte=(0, 0, 1920, 880),
+_, w_, h_ = imagen(clave, "ppt/img/v16_inicio.png", 830, Y0, w=990, recorte=(0, 0, 1920, 1000),
                    nombre="Captura inicio")
-texto(clave, 830, Y0 + h_ + 14, 990, 40, "Inicio: KPIs del último mes con tendencia, alertas generadas por los datos y "
-                                         "estado de los canales.", size=18, color=SUAVE)
+texto(clave, 830, Y0 + h_ + 14, 990, 40, "Inicio: resumen del mes, alertas generadas por los datos y envío del "
+                                         "resumen a Telegram.", size=18, color=SUAVE)
 notas(clave, "PULSO es el prototipo: un .exe que se abre sin instalar nada. Lo diseñé como un producto real para un "
-             "equipo de operaciones. Tiene cuatro módulos: Inicio, que muestra cómo va el mes y qué requiere "
-             "atención; Analítica, Bandeja IA, Voz del cliente y Canales, que cubren los tres criterios de la "
-             "evaluación.")
+             "equipo de operaciones. Tiene seis módulos: Inicio, que muestra cómo va el mes y qué requiere "
+             "atención; Analítica, Bandeja IA, Voz del cliente, Modelo IA y Canales, que cubren los tres criterios de "
+             "la evaluación. Se instala con un asistente y se actualiza solo desde GitHub.")
 
 # ---------------------------------------------------------------- 8. Análisis de datos
 etiqueta(s_analisis, X0, Y0 - 10, "Criterio 2.1.1 · Análisis de información con datos reales")
-pic, w, h = imagen(s_analisis, "ppt/img/app_analisis.png", X0, Y0 + 40, w=1080, recorte=(270, 150, 1890, 1057),
+pic, w, h = imagen(s_analisis, "ppt/img/v16_analisis.png", X0, Y0 + 40, w=1080, recorte=(100, 130, 1906, 1045),
                    nombre="Captura dashboard")
 texto(s_analisis, X0, Y0 + 40 + h + 14, 1080, 40,
-      "Dashboard con filtros por año, región y categoría; exporta el informe a Excel.", size=18, color=SUAVE)
+      "Analítica con segmentadores por año, región y categoría; exporta el informe a Excel.", size=18, color=SUAVE)
 hx = X0 + 1080 + 50
 texto(s_analisis, hx, Y0 + 40, X1 - hx, 50, "Hallazgo → decisión", size=30, color=GRIS, bold=True)
 hallazgos = [("Peak en nov-17 (Black Friday): R$ 1,01 M", "Planificar stock y campañas con 6 semanas de anticipación"),
@@ -441,7 +447,7 @@ notas(s_analisis, "Este es el módulo de análisis. Arriba están los indicadore
 # ---------------------------------------------------------------- 9. Automatización con IA
 etiqueta(s_ia, X0, Y0 - 10, "Criterio 2.1.2 · Automatización de procesos con IA")
 pasos = [("Recepción", "Llega la reseña"), ("Sentimiento", "La IA clasifica"), ("Tema y área", "Motivo y responsable"),
-         ("Prioridad y canal", "Plazo 2 h · 24 h · 72 h"), ("Respuesta y ticket", "Lista para el CRM")]
+         ("Prioridad y canal", "Plazo 2 h · 24 h · 72 h"), ("Responder", "Sola o con aprobación")]
 pw, pg = 318, 32
 for i, (t, d) in enumerate(pasos):
     x = X0 + i * (pw + pg)
@@ -451,27 +457,28 @@ for i, (t, d) in enumerate(pasos):
                  [(d, {"size": 20, "color": BLANCO if i == 1 else TEXTO})]], size=24, align=PP_ALIGN.LEFT, margen=20)
     if i < 4:
         flecha(s_ia, x + pw + 4, Y0 + 105, x + pw + pg - 4, Y0 + 105)
-pic, w, h = imagen(s_ia, "ppt/img/app_ia.png", X0, Y0 + 205, w=1180, recorte=(278, 298, 1872, 1050),
+pic, w, h = imagen(s_ia, "ppt/img/v16_ia.png", X0, Y0 + 200, w=1000, recorte=(100, 120, 1906, 1045),
                    nombre="Captura bandeja IA")
-texto(s_ia, X0, Y0 + 205 + h + 12, 1180, 40, "Bandeja procesada: prioridad, canal y ficha del ticket con la "
-                                             "respuesta generada.", size=18, color=SUAVE)
-mx = X0 + 1180 + 50
-metricas = [("80%", "de precisión en 7.807 reseñas que el modelo no vio"),
-            ("0,01 s", "para procesar 25 mensajes"),
-            ("1,2 h", "ahorradas cada 25 mensajes (supuesto: 3 min por mensaje manual)")]
+texto(s_ia, X0, Y0 + 200 + h + 10, 1000, 40, "Bandeja IA: «Atender primero» con los urgentes y su plazo, y el estado "
+                                             "de cada ticket.", size=18, color=SUAVE)
+mx = X0 + 1000 + 50
+metricas = [("80%", "de acierto en 7.807 reseñas que el modelo no vio"),
+            ("Sola", "la prioridad baja se responde automáticamente al llegar"),
+            ("Aprobada", "cada urgente lo aprueba un agente; se mide el tiempo de primera respuesta")]
 for i, (v, l) in enumerate(metricas):
     y = Y0 + 210 + i * 170
     texto(s_ia, mx, y, X1 - mx, 80, v, size=60, color=ROJO, bold=True)
     texto(s_ia, mx, y + 80, X1 - mx, 80, l, size=20, color=GRIS)
 notas(s_ia, "Este es el proceso que automaticé: la gestión de reseñas y reclamos. El modelo se entrenó con 31 mil "
             "reseñas reales y acierta el 80% en reseñas que nunca vio. Además detecta el tema, como 'no recibido' o "
-            "'producto defectuoso', y con reglas de negocio asigna prioridad, área, canal y plazo. Finalmente "
-            "redacta la respuesta y exporta los tickets a Excel para cargarlos en el CRM. En la demo puedo escribir "
-            "un mensaje y ver cómo lo clasifica.")
+            "'producto defectuoso', y con reglas de negocio asigna prioridad, área, canal y plazo. Luego responde: "
+            "lo de prioridad baja sale solo, y cada urgente aparece en 'Atender primero' para que un agente apruebe "
+            "la respuesta antes de enviarla, así el 20% de error de la IA nunca llega solo al cliente. Cada ticket "
+            "registra su plazo y la app mide el tiempo de primera respuesta. El envío es simulado.")
 
 # ---------------------------------------------------------------- 9b. Voz del cliente
 etiqueta(s_voz, X0, Y0 - 10, "Criterio 2.1.2 · El mismo modelo, cuatro usos más")
-_, w_, h_ = imagen(s_voz, "ppt/img/app_voz.png", X0, Y0 + 40, w=1080, recorte=(262, 130, 1886, 1050),
+_, w_, h_ = imagen(s_voz, "ppt/img/v16_voz.png", X0, Y0 + 40, w=1080, recorte=(100, 130, 1906, 1045),
                    nombre="Captura voz del cliente")
 texto(s_voz, X0, Y0 + 40 + h_ + 12, 1080, 40, "Módulo Voz del cliente: 38.801 reseñas clasificadas por la IA.",
       size=18, color=SUAVE)
@@ -578,9 +585,11 @@ filas = [
     ["Redes sociales", "Clientes", "Campañas por fecha peak y reseñas positivas", "Peak en nov-17", "Media"],
     ["Teams / Slack", "Equipo interno", "Alertas de tickets críticos a cada área", "8,1% de pedidos atrasados",
      "Media"],
+    ["Telegram (bot)", "Equipo interno", "Aviso al celular de tickets críticos, resumen del mes y vendedores en riesgo",
+     "Lo urgente debe responderse en 2 h", "Alta"],
 ]
-tabla(s_canales, X0, Y0 + 40, ANCHO, filas, [2.6, 1.6, 4.2, 3.6, 1.2], size=20, alto_fila=84, resaltar_col=None)
-notas(s_canales, "Propongo siete plataformas, separadas por público: clientes, proveedores y equipo interno. Cada "
+tabla(s_canales, X0, Y0 + 40, ANCHO, filas, [2.6, 1.6, 4.2, 3.6, 1.2], size=20, alto_fila=76, resaltar_col=None)
+notas(s_canales, "Propongo ocho plataformas, separadas por público: clientes, proveedores y equipo interno. Cada "
                  "una se justifica con un dato. WhatsApp tiene prioridad alta porque la entrega explica el 39% de "
                  "los reclamos; el email, porque uno de cada cinco pedidos se paga con boleto y hay que recordar el "
                  "pago; y el portal de vendedores, porque son 3 mil proveedores a coordinar.")
@@ -608,7 +617,7 @@ nodo(cols[3], fila1, "Cliente", "deja su reseña", "actor")
 nodo(cols[3], fila2, "IA de PULSO", "sentimiento + tema", "ia")
 nodo(cols[2], fila2, "CRM", "ticket con prioridad", "sistema")
 nodo(cols[1], fila2, "WhatsApp · Email", "alta 2 h · media 24 h", "canal")
-nodo(cols[0], fila2, "Seller Center · Teams", "alertas a vendedor y áreas", "sistema")
+nodo(cols[0], fila2, "Telegram · Teams", "aviso al celular y a las áreas", "sistema")
 for a, b in ((0, 1), (1, 2), (2, 3)):
     flecha(s_integ, cols[a] + bw + 8, fila1 + bh / 2, cols[b] - 8, fila1 + bh / 2)
 for a, b in ((3, 2), (2, 1), (1, 0)):
@@ -625,19 +634,19 @@ for i, (t, f, b) in enumerate(leyenda):
 notas(s_integ, "Así se integran las plataformas en el procedimiento de la empresa. El pedido entra al ERP, el "
                "vendedor despacha y el cliente recibe avisos por WhatsApp o email. Cuando deja su reseña, la IA la "
                "clasifica y crea el ticket en el CRM. Los casos urgentes se responden por WhatsApp en dos horas y "
-               "las alertas llegan al vendedor por el Seller Center y a las áreas por Teams. El dashboard mide todo "
+               "el equipo recibe el aviso en el celular por Telegram y las áreas por Teams. El dashboard mide todo "
                "y cierra el ciclo de mejora.")
 
 # ---------------------------------------------------------------- 11b. Canales en PULSO
 etiqueta(s_canales_app, X0, Y0 - 10, "Criterio 2.1.3 · Las plataformas operando dentro del producto")
-_, w_, h_ = imagen(s_canales_app, "ppt/img/app_canales.png", X0, Y0 + 40, w=1080, recorte=(240, 52, 1920, 1057),
+_, w_, h_ = imagen(s_canales_app, "ppt/img/v16_canales.png", X0, Y0 + 40, w=1080, recorte=(100, 40, 1906, 1045),
                    nombre="Captura canales")
-texto(s_canales_app, X0, Y0 + 40 + h_ + 12, 1080, 40, "Módulo Canales: integraciones conectables y reglas de "
-                                                      "automatización.", size=18, color=SUAVE)
+texto(s_canales_app, X0, Y0 + 40 + h_ + 12, 1080, 40, "Módulo Canales: 8 integraciones, Telegram conectado de "
+                                                      "verdad, y 9 reglas de automatización.", size=18, color=SUAVE)
 px = X0 + 1080 + 50
 puntos = [("Cada canal se conecta o desconecta", "WhatsApp, email, CRM, Seller Center, ERP, redes y Teams, cada "
                                                  "uno con el dato que lo justifica."),
-          ("8 reglas «cuando… entonces…»", "Por ejemplo: reseña negativa crítica → responder por WhatsApp en 2 horas."),
+          ("Telegram es real", "Avisa al celular del equipo; WhatsApp, email y los demás canales están simulados."),
           ("Todo queda conectado", "Si se desactiva WhatsApp, la Bandeja IA deriva los casos urgentes al email y la "
                                    "regla queda en pausa.")]
 for i, (t, d) in enumerate(puntos):
@@ -648,6 +657,65 @@ for i, (t, d) in enumerate(puntos):
 notas(s_canales_app, "Los canales no se quedan en una tabla: están implementados en el producto. Cada integración "
                      "se activa o desactiva y las reglas de automatización definen qué pasa en cada caso. En la demo "
                      "puedo desconectar WhatsApp y mostrar cómo la bandeja deriva al email los reclamos urgentes.")
+
+# ---------------------------------------------------------------- 11c. Avisos por Telegram
+etiqueta(s_telegram, X0, Y0 - 10, "Criterio 2.1.3 · Comunicación inmediata con el equipo")
+avisos = [("Ticket crítico", "Automático: cada urgente que detecta la IA, con tema, área y plazo."),
+          ("Ticket por vencer", "Automático: un urgente sin aprobar a 30 minutos de su plazo, una sola vez."),
+          ("Resumen del mes", "Botón en Inicio: KPIs con su variación y las alertas, en un mensaje."),
+          ("Vendedores en riesgo", "Botón en Voz del cliente: los que duplican el promedio de reseñas negativas.")]
+for i, (t, d) in enumerate(avisos):
+    y = Y0 + 40 + i * 150
+    numero(s_telegram, X0, y, i + 1, size=40)
+    texto(s_telegram, X0 + 110, y + 4, 760, 44, t, size=27, color=GRIS, bold=True)
+    texto(s_telegram, X0 + 110, y + 50, 760, 80, d, size=21, color=TEXTO)
+bx = X0 + 960
+texto(s_telegram, bx, Y0 + 30, X1 - bx, 40, "Así llegan al celular", size=24, color=GRIS, bold=True)
+burbujas = [["🔴 Ticket crítico TCK-261008-0003", "Tema: No recibido · Área: Logística", "Responder en: 2 h"],
+            ["⏰ Ticket urgente sin aprobar", "Vence en 25 min (a las 13:37)"],
+            ["⚠️ 11 vendedores en riesgo", "1. V-0069 · 88% negativas · Reembolso"]]
+yb = Y0 + 90
+for b in burbujas:
+    alto = 40 + 34 * len(b)
+    caja(s_telegram, bx, yb, X1 - bx, alto, FONDO, forma=MSO_SHAPE.ROUNDED_RECTANGLE, nombre="Mensaje")
+    texto(s_telegram, bx + 24, yb + 20, X1 - bx - 48, alto - 30,
+          [[(b[0], {"bold": True, "color": GRIS})]] + [[(l, {})] for l in b[1:]], size=20, color=TEXTO, espacio=4)
+    yb += alto + 24
+texto(s_telegram, X0, Y0 + 650, ANCHO, 60, "Se configura en tres pasos (crear el bot con @BotFather, pegar el token y "
+                                          "enviarle /start) y el token queda guardado solo en el PC.", size=20, color=SUAVE)
+notas(s_telegram, "Telegram es la única integración real del prototipo. Lo elegí porque su API es gratuita y no exige una "
+                  "empresa verificada, a diferencia de WhatsApp Business. El equipo recibe en el celular cada ticket "
+                  "crítico y un recordatorio si un urgente está por vencer sin aprobar; además, con un botón se envía "
+                  "el resumen del mes a la gerencia o el ranking de vendedores en riesgo.")
+
+# ---------------------------------------------------------------- 11d. Distribución y actualizaciones
+etiqueta(s_dist, X0, Y0 - 10, "Implementación · Cómo llega cada mejora a los equipos")
+pasos_d = [("Publicar", "Versión nueva en GitHub"), ("Detectar", "La app avisa al abrirse"),
+           ("Verificar", "Descarga y huella SHA-256"), ("Instalar", "En silencio y se reabre")]
+pw2_, pg2_ = 405, 33
+for i, (t, d) in enumerate(pasos_d):
+    x = X0 + i * (pw2_ + pg2_)
+    c = caja(s_dist, x, Y0 + 40, pw2_, 120, ROJO if i == 2 else FONDO, nombre=f"Paso {i + 1}")
+    col = BLANCO if i == 2 else GRIS
+    texto_en(c, [[(f"{i + 1:02d}  ", {"bold": True, "size": 26, "color": col}), (t, {"bold": True, "color": col})],
+                 [(d, {"size": 20, "color": BLANCO if i == 2 else TEXTO})]], size=24, align=PP_ALIGN.LEFT, margen=20)
+    if i < 3:
+        flecha(s_dist, x + pw2_ + 4, Y0 + 100, x + pw2_ + pg2_ - 4, Y0 + 100)
+versiones = [["Versión", "Fecha", "Qué trajo"],
+             ["1.6.1", "8 oct 2026", "Mensajes de error de conexión con su causa"],
+             ["1.6.0", "8 oct 2026", "Resumen del mes, vendedores en riesgo y tickets por vencer por Telegram"],
+             ["1.5.1", "8 oct 2026", "«Atender primero» y respuesta al cliente con aprobación de urgentes"],
+             ["1.5.0", "7 oct 2026", "Diseño estilo reporte y avisos de tickets críticos por Telegram"],
+             ["1.4.0", "7 oct 2026", "Actualización automática desde GitHub"],
+             ["1.3.0", "7 oct 2026", "Primera versión pública: instalador y portable"]]
+tabla(s_dist, X0, Y0 + 200, ANCHO, versiones, [1.2, 1.6, 8], size=21, alto_fila=66, resaltar_col=0)
+texto(s_dist, X0, Y0 + 200 + 66 * 7 + 16, ANCHO, 40, "Instalador de 64 MB, sin permisos de administrador; abre en unos "
+                                                     "3 segundos. Código y versiones en github.com/conEFE/pulso.",
+      size=18, color=SUAVE)
+notas(s_dist, "Para TI, la duda era cómo mantenerlo. PULSO se instala con un asistente, sin permisos de administrador, y "
+              "cada mejora llega sola: al abrirse consulta GitHub, descarga el instalador nuevo, verifica su huella "
+              "SHA-256 para no ejecutar un archivo alterado, se instala en silencio y se vuelve a abrir. La tabla muestra "
+              "cómo evolucionó el producto en seis versiones.")
 
 # ---------------------------------------------------------------- 12. Implementación
 fases = [("Fase 1", "Mes 1", "Datos", "Integrar ventas, logística y reseñas; lanzar el dashboard",
